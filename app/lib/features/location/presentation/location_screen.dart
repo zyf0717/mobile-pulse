@@ -7,6 +7,7 @@ import '../models/location_data.dart';
 import '../../../services/relay_push_service.dart';
 import '../../../services/polar_h10_service.dart';
 import '../../hr/logic/polar_provider.dart';
+import '../../pulse/logic/pulse_provider.dart';
 
 class LocationScreen extends ConsumerWidget {
   const LocationScreen({super.key});
@@ -62,9 +63,11 @@ class _BottomPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final relay = ref.watch(relayNotifierProvider);
+    final pulse = ref.watch(pulseNotifierProvider);
     final polar = ref.watch(polarNotifierProvider);
     final pNotifier = ref.read(polarNotifierProvider.notifier);
     final rNotifier = ref.read(relayNotifierProvider.notifier);
+    final puNotifier = ref.read(pulseNotifierProvider.notifier);
 
     final isConnected = polar.connectionState == PolarConnectionState.connected;
     final isIdle =
@@ -86,6 +89,19 @@ class _BottomPanel extends ConsumerWidget {
               active: relay.active,
               pushLabel: 'Push GPS',
               onToggle: rNotifier.toggle,
+            ),
+          ),
+          _ControlRow(
+            leading: _StatusChip(
+              active: pulse.active,
+              status: pulse.status,
+              offLabel: 'Pulse relay off',
+              okLabel: 'Pulse relay OK',
+            ),
+            trailing: _RelayButton(
+              active: pulse.active,
+              pushLabel: 'Push Pulse',
+              onToggle: puNotifier.toggle,
             ),
           ),
           const Divider(height: 1),
@@ -129,7 +145,72 @@ class _BottomPanel extends ConsumerWidget {
               onToggle: isConnected ? pNotifier.toggleH10Relay : null,
             ),
           ),
+          const Divider(height: 1),
+          _StartStopAllButton(
+            relay: relay,
+            pulse: pulse,
+            polar: polar,
+            rNotifier: rNotifier,
+            puNotifier: puNotifier,
+            pNotifier: pNotifier,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Start All / Stop All button ───────────────────────────────────────────────
+
+class _StartStopAllButton extends StatelessWidget {
+  final RelayState relay;
+  final PulseState pulse;
+  final PolarState polar;
+  final RelayNotifier rNotifier;
+  final PulseNotifier puNotifier;
+  final PolarNotifier pNotifier;
+
+  const _StartStopAllButton({
+    required this.relay,
+    required this.pulse,
+    required this.polar,
+    required this.rNotifier,
+    required this.puNotifier,
+    required this.pNotifier,
+  });
+
+  bool get _anyActive =>
+      relay.active ||
+      pulse.active ||
+      polar.h10RelayActive ||
+      polar.connectionState == PolarConnectionState.connected ||
+      polar.connectionState == PolarConnectionState.scanning ||
+      polar.connectionState == PolarConnectionState.connecting;
+
+  @override
+  Widget build(BuildContext context) {
+    final stopping = _anyActive;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+      child: Center(
+        child: FilledButton(
+          onPressed: () {
+            if (stopping) {
+              rNotifier.stopIfActive();
+              puNotifier.stopIfActive();
+              pNotifier.stopAll();
+            } else {
+              rNotifier.startIfInactive();
+              puNotifier.startIfInactive();
+              pNotifier.connectAndStartRelay();
+            }
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: stopping ? Colors.red : null,
+            minimumSize: const Size(180, 44),
+          ),
+          child: Text(stopping ? 'Stop All' : 'Start All'),
+        ),
       ),
     );
   }

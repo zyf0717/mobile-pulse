@@ -155,6 +155,42 @@ void main() {
     });
   });
 
+  group('RelayPushService — empty URL', () {
+    test(
+      'emits error status without posting when relay URL is empty',
+      () async {
+        // Construct service with an explicitly empty URL (simulates missing
+        // --dart-define) and a fresh mock client.
+        final localClient = MockHttpClient();
+        final emptyService = RelayPushService(
+          client: localClient,
+          relayUrl: '',
+        );
+        addTearDown(emptyService.dispose);
+
+        final statuses = <RelayPushStatus>[];
+        final sub = emptyService.statusStream.listen(statuses.add);
+        addTearDown(sub.cancel);
+
+        final controller = StreamController<Map<String, dynamic>>();
+        emptyService.start(controller.stream);
+        controller.add({'key': 'value'});
+        await Future<void>.delayed(Duration.zero);
+
+        expect(statuses, [RelayPushStatus.error]);
+        verifyNever(
+          () => localClient.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        );
+
+        await controller.close();
+      },
+    );
+  });
+
   group('RelayPushService.stop', () {
     test('stops forwarding data after stop() is called', () async {
       when(

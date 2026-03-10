@@ -42,11 +42,20 @@ class RelayNotifier extends Notifier<RelayState> {
       state = state.copyWith(active: true);
     }
   }
+
+  void startIfInactive() {
+    if (!state.active) toggle();
+  }
+
+  void stopIfActive() {
+    if (state.active) toggle();
+  }
 }
 
-final relayPushServiceProvider = Provider<RelayPushService>(
-  (_) => RelayPushService(),
-);
+final relayPushServiceProvider = Provider<RelayPushService>((ref) {
+  const url = String.fromEnvironment('RELAY_GPS_URL');
+  return RelayPushService(relayUrl: url);
+});
 
 final relayNotifierProvider = NotifierProvider<RelayNotifier, RelayState>(
   RelayNotifier.new,

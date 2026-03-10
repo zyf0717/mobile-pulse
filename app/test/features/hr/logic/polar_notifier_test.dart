@@ -140,25 +140,28 @@ void main() {
   });
 
   group('connection drop auto-stops all relays', () {
-    test('h10RelayActive cleared and all relays stopped on disconnected event', () async {
-      final container = _container();
-      final notifier = container.read(polarNotifierProvider.notifier);
+    test(
+      'h10RelayActive cleared and all relays stopped on disconnected event',
+      () async {
+        final container = _container();
+        final notifier = container.read(polarNotifierProvider.notifier);
 
-      notifier.toggleH10Relay();
-      expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
+        notifier.toggleH10Relay();
+        expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
 
-      // Simulate connection drop.
-      connCtrl.add(PolarConnectionState.disconnected);
-      await Future<void>.delayed(Duration.zero);
+        // Simulate connection drop.
+        connCtrl.add(PolarConnectionState.disconnected);
+        await Future<void>.delayed(Duration.zero);
 
-      final state = container.read(polarNotifierProvider);
-      expect(state.h10RelayActive, isFalse);
-      expect(state.latestBpm, isNull);
+        final state = container.read(polarNotifierProvider);
+        expect(state.h10RelayActive, isFalse);
+        expect(state.latestBpm, isNull);
 
-      verify(() => mockHrRelay.stop()).called(1);
-      verify(() => mockEcgRelay.stop()).called(1);
-      verify(() => mockAccRelay.stop()).called(1);
-    });
+        verify(() => mockHrRelay.stop()).called(1);
+        verify(() => mockEcgRelay.stop()).called(1);
+        verify(() => mockAccRelay.stop()).called(1);
+      },
+    );
   });
 
   group('disconnect()', () {
@@ -171,28 +174,114 @@ void main() {
       await notifier.disconnect();
 
       expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
-      verify(() => mockH10.disconnect()).called(1);
-    });
-  });
       verify(() => mockHrRelay.stop()).called(1);
       verify(() => mockEcgRelay.stop()).called(1);
       verify(() => mockAccRelay.stop()).called(1);
+      verify(() => mockH10.disconnect()).called(1);
     });
   });
 
-  group('disconnect()', () {
-    test('stops all relays and delegates to h10.disconnect()', () async {
+  group('connectAndStartRelay()', () {
+    test('starts relay immediately when already connected', () async {
       final container = _container();
       final notifier = container.read(polarNotifierProvider.notifier);
 
-      notifier.toggleRelay();
-      notifier.toggleEcgRelay();
+      // Simulate already connected.
+      connCtrl.add(PolarConnectionState.connected);
+      await Future<void>.delayed(Duration.zero);
 
-      await notifier.disconnect();
+      await notifier.connectAndStartRelay();
 
-      expect(container.read(polarNotifierProvider).relayActive, isFalse);
-      expect(container.read(polarNotifierProvider).ecgRelayActive, isFalse);
+      expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
+      verify(() => mockHrRelay.start(any())).called(1);
+      verify(() => mockEcgRelay.start(any())).called(1);
+      verify(() => mockAccRelay.start(any())).called(1);
+      // Should not call connect() again.
+      verifyNever(() => mockH10.connect());
+    });
+
+    test(
+      'does not double-start relay if already active and connected',
+      () async {
+        final container = _container();
+        final notifier = container.read(polarNotifierProvider.notifier);
+
+        connCtrl.add(PolarConnectionState.connected);
+        await Future<void>.delayed(Duration.zero);
+
+        await notifier.connectAndStartRelay(); // starts relay
+        await notifier.connectAndStartRelay(); // should be a no-op
+
+        verify(() => mockHrRelay.start(any())).called(1); // only once
+      },
+    );
+
+    test(
+      'auto-starts relay when connected event arrives after pending connect',
+      () async {
+        final container = _container();
+        final notifier = container.read(polarNotifierProvider.notifier);
+
+        // Trigger connect while disconnected → sets _startAllPending.
+        await notifier.connectAndStartRelay();
+        verify(() => mockH10.connect()).called(1);
+        expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
+
+        // Simulate connection success.
+        connCtrl.add(PolarConnectionState.connected);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
+        verify(() => mockHrRelay.start(any())).called(1);
+        verify(() => mockEcgRelay.start(any())).called(1);
+        verify(() => mockAccRelay.start(any())).called(1);
+      },
+    );
+
+    test(
+      'pending flag cleared on disconnect — relay does not auto-start',
+      () async {
+        final container = _container();
+        final notifier = container.read(polarNotifierProvider.notifier);
+
+        await notifier.connectAndStartRelay(); // sets pending
+        // Connection fails / dropped before connecting.
+        connCtrl.add(PolarConnectionState.disconnected);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
+        verifyNever(() => mockHrRelay.start(any()));
+      },
+    );
+  });
+
+  group('stopAll()', () {
+    test('disconnects and stops all relays', () async {
+      final container = _container();
+      final notifier = container.read(polarNotifierProvider.notifier);
+
+      notifier.toggleH10Relay();
+      await notifier.stopAll();
+
+      expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
       verify(() => mockH10.disconnect()).called(1);
     });
+
+    test(
+      'cancels pending auto-start so relay does not start after disconnect',
+      () async {
+        final container = _container();
+        final notifier = container.read(polarNotifierProvider.notifier);
+
+        await notifier.connectAndStartRelay(); // pending = true
+        await notifier.stopAll(); // should clear pending
+
+        // Now fire connected — relay must NOT auto-start.
+        connCtrl.add(PolarConnectionState.connected);
+        await Future<void>.delayed(Duration.zero);
+
+        verifyNever(() => mockHrRelay.start(any()));
+      },
+    );
   });
 }

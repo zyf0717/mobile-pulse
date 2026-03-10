@@ -57,6 +57,8 @@ class PolarState {
 }
 
 class PolarNotifier extends Notifier<PolarState> {
+  bool _startAllPending = false;
+
   @override
   PolarState build() {
     final h10 = ref.watch(polarH10ServiceProvider);
@@ -67,6 +69,7 @@ class PolarNotifier extends Notifier<PolarState> {
     final connSub = h10.connectionState.listen((s) {
       if (s == PolarConnectionState.disconnected ||
           s == PolarConnectionState.error) {
+        _startAllPending = false;
         hrRelay.stop();
         ecgRelay.stop();
         accRelay.stop();
@@ -80,6 +83,10 @@ class PolarNotifier extends Notifier<PolarState> {
         );
       } else {
         state = state.copyWith(connectionState: s);
+        if (s == PolarConnectionState.connected && _startAllPending) {
+          _startAllPending = false;
+          _startH10Relay();
+        }
       }
     });
 
@@ -113,6 +120,33 @@ class PolarNotifier extends Notifier<PolarState> {
 
   Future<void> connect() => ref.read(polarH10ServiceProvider).connect();
 
+  /// Used by Start All: connect then auto-start the H10 relay once connected.
+  Future<void> connectAndStartRelay() {
+    if (state.connectionState == PolarConnectionState.connected) {
+      if (!state.h10RelayActive) _startH10Relay();
+      return Future.value();
+    }
+    _startAllPending = true;
+    return ref.read(polarH10ServiceProvider).connect();
+  }
+
+  /// Used by Stop All: stop relay + disconnect.
+  Future<void> stopAll() async {
+    _startAllPending = false;
+    await disconnect();
+  }
+
+  void _startH10Relay() {
+    final hrRelay = ref.read(hrRelayPushServiceProvider);
+    final ecgRelay = ref.read(ecgRelayPushServiceProvider);
+    final accRelay = ref.read(accRelayPushServiceProvider);
+    final h10 = ref.read(polarH10ServiceProvider);
+    hrRelay.start(h10.hrStream.map((hr) => hr.toJson()));
+    ecgRelay.start(h10.ecgStream.map((ecg) => ecg.toJson()));
+    accRelay.start(h10.accStream.map((acc) => acc.toJson()));
+    state = state.copyWith(h10RelayActive: true);
+  }
+
   Future<void> disconnect() async {
     ref.read(hrRelayPushServiceProvider).stop();
     ref.read(ecgRelayPushServiceProvider).stop();
@@ -127,11 +161,10 @@ class PolarNotifier extends Notifier<PolarState> {
   }
 
   void toggleH10Relay() {
-    final hrRelay = ref.read(hrRelayPushServiceProvider);
-    final ecgRelay = ref.read(ecgRelayPushServiceProvider);
-    final accRelay = ref.read(accRelayPushServiceProvider);
-    final h10 = ref.read(polarH10ServiceProvider);
     if (state.h10RelayActive) {
+      final hrRelay = ref.read(hrRelayPushServiceProvider);
+      final ecgRelay = ref.read(ecgRelayPushServiceProvider);
+      final accRelay = ref.read(accRelayPushServiceProvider);
       hrRelay.stop();
       ecgRelay.stop();
       accRelay.stop();
@@ -142,10 +175,7 @@ class PolarNotifier extends Notifier<PolarState> {
         accRelayStatus: RelayPushStatus.idle,
       );
     } else {
-      hrRelay.start(h10.hrStream.map((hr) => hr.toJson()));
-      ecgRelay.start(h10.ecgStream.map((ecg) => ecg.toJson()));
-      accRelay.start(h10.accStream.map((acc) => acc.toJson()));
-      state = state.copyWith(h10RelayActive: true);
+      _startH10Relay();
     }
   }
 }
