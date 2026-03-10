@@ -47,83 +47,24 @@ class LocationScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
-          const _GpsRelayRow(),
-          const Divider(height: 1),
-          const _H10Section(),
+          const _BottomPanel(),
         ],
       ),
     );
   }
 }
 
-// ── GPS relay row ────────────────────────────────────────────────────────────
+// ── Bottom panel ─────────────────────────────────────────────────────────────
 
-class _GpsRelayRow extends ConsumerWidget {
-  const _GpsRelayRow();
+class _BottomPanel extends ConsumerWidget {
+  const _BottomPanel();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final relay = ref.watch(relayNotifierProvider);
-    return _RelayRow(
-      status: relay.status,
-      active: relay.active,
-      label: 'GPS relay',
-      pushLabel: 'Push GPS',
-      onToggle: () => ref.read(relayNotifierProvider.notifier).toggle(),
-      addSafeArea: false,
-    );
-  }
-}
-
-// ── Polar H10 section ────────────────────────────────────────────────────────
-
-class _H10Section extends ConsumerWidget {
-  const _H10Section();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
     final polar = ref.watch(polarNotifierProvider);
-    final notifier = ref.read(polarNotifierProvider.notifier);
-
-    final (
-      btColor,
-      btIcon,
-      btLabel,
-      canToggleRelay,
-    ) = switch (polar.connectionState) {
-      PolarConnectionState.disconnected => (
-        Colors.grey,
-        Icons.bluetooth_disabled,
-        'Polar H10',
-        false,
-      ),
-      PolarConnectionState.scanning => (
-        Colors.orange,
-        Icons.bluetooth_searching,
-        'Scanning…',
-        false,
-      ),
-      PolarConnectionState.connecting => (
-        Colors.blue,
-        Icons.bluetooth_connected,
-        'Connecting…',
-        false,
-      ),
-      PolarConnectionState.connected => (
-        Colors.green,
-        Icons.bluetooth_connected,
-        polar.latestBpm != null
-            ? 'Polar H10 — ${polar.latestBpm} bpm'
-            : 'Polar H10 — waiting…',
-        true,
-      ),
-      PolarConnectionState.error => (
-        Colors.red,
-        Icons.bluetooth_disabled,
-        'Not found / error',
-        false,
-      ),
-    };
+    final pNotifier = ref.read(polarNotifierProvider.notifier);
+    final rNotifier = ref.read(relayNotifierProvider.notifier);
 
     final isConnected = polar.connectionState == PolarConnectionState.connected;
     final isIdle =
@@ -131,131 +72,250 @@ class _H10Section extends ConsumerWidget {
         polar.connectionState == PolarConnectionState.error;
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Icon(btIcon, color: btColor, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    btLabel,
-                    style: TextStyle(
-                      color: btColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                if (isIdle)
-                  OutlinedButton.icon(
-                    onPressed: notifier.connect,
-                    icon: const Icon(Icons.bluetooth, size: 18),
-                    label: const Text('Connect'),
-                  )
-                else if (isConnected)
-                  OutlinedButton.icon(
-                    onPressed: notifier.disconnect,
-                    icon: const Icon(Icons.bluetooth_disabled, size: 18),
-                    label: const Text('Disconnect'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                    ),
-                  )
-                else
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ControlRow(
+            leading: _StatusChip(
+              active: relay.active,
+              status: relay.status,
+              offLabel: 'GPS relay off',
+              okLabel: 'GPS relay OK',
             ),
-            const SizedBox(height: 8),
-            _RelayRow(
-              status: polar.relayStatus,
+            trailing: _RelayButton(
+              active: relay.active,
+              pushLabel: 'Push GPS',
+              onToggle: rNotifier.toggle,
+            ),
+          ),
+          const Divider(height: 1),
+          _ControlRow(
+            leading: _H10StatusChip(polar: polar),
+            trailing: SizedBox(
+              width: 120,
+              child: isIdle
+                  ? OutlinedButton(
+                      onPressed: pNotifier.connect,
+                      child: const Text('Connect'),
+                    )
+                  : isConnected
+                  ? OutlinedButton(
+                      onPressed: pNotifier.disconnect,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                      child: const Text('Disconnect'),
+                    )
+                  : const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+            ),
+          ),
+          _ControlRow(
+            leading: _StatusChip(
               active: polar.relayActive,
-              label: 'HR relay',
-              pushLabel: 'Push HR',
-              onToggle: canToggleRelay ? notifier.toggleRelay : null,
-              addSafeArea: false,
+              status: polar.relayStatus,
+              offLabel: 'HR relay off',
+              okLabel: 'HR relay OK',
             ),
-          ],
-        ),
+            trailing: _RelayButton(
+              active: polar.relayActive,
+              pushLabel: 'Push HR',
+              onToggle: isConnected ? pNotifier.toggleRelay : null,
+            ),
+          ),
+          _ControlRow(
+            leading: _StatusChip(
+              active: polar.ecgRelayActive,
+              status: polar.ecgRelayStatus,
+              offLabel: 'ECG relay off',
+              okLabel: 'ECG relay OK',
+            ),
+            trailing: _RelayButton(
+              active: polar.ecgRelayActive,
+              pushLabel: 'Push ECG',
+              onToggle: isConnected ? pNotifier.toggleEcgRelay : null,
+            ),
+          ),
+          _ControlRow(
+            leading: _StatusChip(
+              active: polar.accRelayActive,
+              status: polar.accRelayStatus,
+              offLabel: 'ACC relay off',
+              okLabel: 'ACC relay OK',
+            ),
+            trailing: _RelayButton(
+              active: polar.accRelayActive,
+              pushLabel: 'Push ACC',
+              onToggle: isConnected ? pNotifier.toggleAccRelay : null,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ── Shared relay row ─────────────────────────────────────────────────────────
+// ── Layout primitive ──────────────────────────────────────────────────────────
 
-class _RelayRow extends StatelessWidget {
-  final RelayPushStatus status;
+class _ControlRow extends StatelessWidget {
+  final Widget leading;
+  final Widget trailing;
+  const _ControlRow({required this.leading, required this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: leading),
+          trailing,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Status chip ───────────────────────────────────────────────────────────────
+
+class _StatusChip extends StatelessWidget {
   final bool active;
-  final String label;
-  final String pushLabel;
-  final VoidCallback? onToggle;
-  final bool addSafeArea;
+  final RelayPushStatus status;
+  final String offLabel;
+  final String okLabel;
 
-  const _RelayRow({
-    required this.status,
+  const _StatusChip({
     required this.active,
-    required this.label,
-    required this.pushLabel,
-    required this.onToggle,
-    required this.addSafeArea,
+    required this.status,
+    required this.offLabel,
+    required this.okLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     final Color color;
     final IconData icon;
-    final String statusLabel;
+    final String label;
 
     if (!active) {
       color = Colors.grey;
       icon = Icons.cloud_off_outlined;
-      statusLabel = '$label off';
+      label = offLabel;
     } else if (status == RelayPushStatus.ok) {
       color = Colors.green;
       icon = Icons.cloud_done;
-      statusLabel = '$label OK';
+      label = okLabel;
     } else if (status == RelayPushStatus.error) {
       color = Colors.red;
       icon = Icons.cloud_off;
-      statusLabel = '$label error';
+      label = '${offLabel.split(' ').first} error';
     } else {
       color = Colors.orange;
       icon = Icons.sync;
-      statusLabel = 'Connecting…';
+      label = 'Connecting…';
     }
 
-    final row = Padding(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 8),
-          Text(
-            statusLabel,
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
             style: TextStyle(color: color, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
           ),
-          const Spacer(),
-          FilledButton.icon(
-            onPressed: onToggle,
-            icon: Icon(active ? Icons.stop : Icons.play_arrow, size: 18),
-            label: Text(active ? 'Stop' : pushLabel),
-            style: active
-                ? FilledButton.styleFrom(backgroundColor: Colors.red)
-                : null,
+        ),
+      ],
+    );
+  }
+}
+
+// ── H10 status chip ───────────────────────────────────────────────────────────
+
+class _H10StatusChip extends StatelessWidget {
+  final PolarState polar;
+  const _H10StatusChip({required this.polar});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon, label) = switch (polar.connectionState) {
+      PolarConnectionState.disconnected => (
+        Colors.grey,
+        Icons.bluetooth_disabled,
+        'Polar H10',
+      ),
+      PolarConnectionState.scanning => (
+        Colors.orange,
+        Icons.bluetooth_searching,
+        'Scanning…',
+      ),
+      PolarConnectionState.connecting => (
+        Colors.blue,
+        Icons.bluetooth_connected,
+        'Connecting…',
+      ),
+      PolarConnectionState.connected => (
+        Colors.green,
+        Icons.bluetooth_connected,
+        polar.latestBpm != null
+            ? 'H10 — ${polar.latestBpm} bpm'
+            : 'H10 — waiting…',
+      ),
+      PolarConnectionState.error => (
+        Colors.red,
+        Icons.bluetooth_disabled,
+        'Not found / error',
+      ),
+    };
+
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
           ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+// ── Relay button ──────────────────────────────────────────────────────────────
+
+class _RelayButton extends StatelessWidget {
+  final bool active;
+  final String pushLabel;
+  final VoidCallback? onToggle;
+
+  const _RelayButton({
+    required this.active,
+    required this.pushLabel,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 120,
+      child: FilledButton(
+        onPressed: onToggle,
+        style: active
+            ? FilledButton.styleFrom(backgroundColor: Colors.red)
+            : null,
+        child: Text(active ? 'Stop' : pushLabel),
       ),
     );
-
-    return addSafeArea ? SafeArea(child: row) : row;
   }
 }
 
