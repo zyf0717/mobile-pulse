@@ -95,14 +95,12 @@ void main() {
   }
 
   group('PolarNotifier initial state', () {
-    test('starts with disconnected / all relays off', () {
+    test('starts with disconnected / relay off', () {
       final container = _container();
       final state = container.read(polarNotifierProvider);
       expect(state.connectionState, PolarConnectionState.disconnected);
       expect(state.latestBpm, isNull);
-      expect(state.relayActive, isFalse);
-      expect(state.ecgRelayActive, isFalse);
-      expect(state.accRelayActive, isFalse);
+      expect(state.h10RelayActive, isFalse);
     });
   });
 
@@ -119,85 +117,63 @@ void main() {
     });
   });
 
-  group('toggleRelay (HR)', () {
-    test('activates HR relay and marks relayActive = true', () {
+  group('toggleH10Relay', () {
+    test('activates all three relays and marks h10RelayActive = true', () {
       final container = _container();
-      container.read(polarNotifierProvider.notifier).toggleRelay();
-      expect(container.read(polarNotifierProvider).relayActive, isTrue);
+      container.read(polarNotifierProvider.notifier).toggleH10Relay();
+      expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
       verify(() => mockHrRelay.start(any())).called(1);
-    });
-
-    test('deactivates HR relay and calls stop()', () {
-      final container = _container();
-      final notifier = container.read(polarNotifierProvider.notifier);
-      notifier.toggleRelay(); // on
-      notifier.toggleRelay(); // off
-      expect(container.read(polarNotifierProvider).relayActive, isFalse);
-      verify(() => mockHrRelay.stop()).called(1);
-    });
-  });
-
-  group('toggleEcgRelay', () {
-    test('activates ECG relay and marks ecgRelayActive = true', () {
-      final container = _container();
-      container.read(polarNotifierProvider.notifier).toggleEcgRelay();
-      expect(container.read(polarNotifierProvider).ecgRelayActive, isTrue);
       verify(() => mockEcgRelay.start(any())).called(1);
-    });
-
-    test('deactivates ECG relay and calls stop()', () {
-      final container = _container();
-      final notifier = container.read(polarNotifierProvider.notifier);
-      notifier.toggleEcgRelay(); // on
-      notifier.toggleEcgRelay(); // off
-      expect(container.read(polarNotifierProvider).ecgRelayActive, isFalse);
-      verify(() => mockEcgRelay.stop()).called(1);
-    });
-  });
-
-  group('toggleAccRelay', () {
-    test('activates ACC relay and marks accRelayActive = true', () {
-      final container = _container();
-      container.read(polarNotifierProvider.notifier).toggleAccRelay();
-      expect(container.read(polarNotifierProvider).accRelayActive, isTrue);
       verify(() => mockAccRelay.start(any())).called(1);
     });
 
-    test('deactivates ACC relay and calls stop()', () {
+    test('deactivates all three relays and calls stop() on each', () {
       final container = _container();
       final notifier = container.read(polarNotifierProvider.notifier);
-      notifier.toggleAccRelay(); // on
-      notifier.toggleAccRelay(); // off
-      expect(container.read(polarNotifierProvider).accRelayActive, isFalse);
+      notifier.toggleH10Relay(); // on
+      notifier.toggleH10Relay(); // off
+      expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
+      verify(() => mockHrRelay.stop()).called(1);
+      verify(() => mockEcgRelay.stop()).called(1);
       verify(() => mockAccRelay.stop()).called(1);
     });
   });
 
   group('connection drop auto-stops all relays', () {
-    test('all relayActive flags cleared on disconnected event', () async {
+    test('h10RelayActive cleared and all relays stopped on disconnected event', () async {
       final container = _container();
       final notifier = container.read(polarNotifierProvider.notifier);
 
-      // Start all three relays.
-      notifier.toggleRelay();
-      notifier.toggleEcgRelay();
-      notifier.toggleAccRelay();
-
-      expect(container.read(polarNotifierProvider).relayActive, isTrue);
-      expect(container.read(polarNotifierProvider).ecgRelayActive, isTrue);
-      expect(container.read(polarNotifierProvider).accRelayActive, isTrue);
+      notifier.toggleH10Relay();
+      expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
 
       // Simulate connection drop.
       connCtrl.add(PolarConnectionState.disconnected);
       await Future<void>.delayed(Duration.zero);
 
       final state = container.read(polarNotifierProvider);
-      expect(state.relayActive, isFalse);
-      expect(state.ecgRelayActive, isFalse);
-      expect(state.accRelayActive, isFalse);
+      expect(state.h10RelayActive, isFalse);
       expect(state.latestBpm, isNull);
 
-      // Each relay's stop() should have been called once.
+      verify(() => mockHrRelay.stop()).called(1);
+      verify(() => mockEcgRelay.stop()).called(1);
+      verify(() => mockAccRelay.stop()).called(1);
+    });
+  });
+
+  group('disconnect()', () {
+    test('stops all relays and delegates to h10.disconnect()', () async {
+      final container = _container();
+      final notifier = container.read(polarNotifierProvider.notifier);
+
+      notifier.toggleH10Relay();
+
+      await notifier.disconnect();
+
+      expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
+      verify(() => mockH10.disconnect()).called(1);
+    });
+  });
       verify(() => mockHrRelay.stop()).called(1);
       verify(() => mockEcgRelay.stop()).called(1);
       verify(() => mockAccRelay.stop()).called(1);

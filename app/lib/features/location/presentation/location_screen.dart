@@ -118,41 +118,15 @@ class _BottomPanel extends ConsumerWidget {
           ),
           _ControlRow(
             leading: _StatusChip(
-              active: polar.relayActive,
-              status: polar.relayStatus,
-              offLabel: 'HR relay off',
-              okLabel: 'HR relay OK',
+              active: polar.h10RelayActive,
+              status: polar.h10RelayStatus,
+              offLabel: 'H10 relay off',
+              okLabel: 'H10 relay OK',
             ),
             trailing: _RelayButton(
-              active: polar.relayActive,
-              pushLabel: 'Push HR',
-              onToggle: isConnected ? pNotifier.toggleRelay : null,
-            ),
-          ),
-          _ControlRow(
-            leading: _StatusChip(
-              active: polar.ecgRelayActive,
-              status: polar.ecgRelayStatus,
-              offLabel: 'ECG relay off',
-              okLabel: 'ECG relay OK',
-            ),
-            trailing: _RelayButton(
-              active: polar.ecgRelayActive,
-              pushLabel: 'Push ECG',
-              onToggle: isConnected ? pNotifier.toggleEcgRelay : null,
-            ),
-          ),
-          _ControlRow(
-            leading: _StatusChip(
-              active: polar.accRelayActive,
-              status: polar.accRelayStatus,
-              offLabel: 'ACC relay off',
-              okLabel: 'ACC relay OK',
-            ),
-            trailing: _RelayButton(
-              active: polar.accRelayActive,
-              pushLabel: 'Push ACC',
-              onToggle: isConnected ? pNotifier.toggleAccRelay : null,
+              active: polar.h10RelayActive,
+              pushLabel: 'Push H10',
+              onToggle: isConnected ? pNotifier.toggleH10Relay : null,
             ),
           ),
         ],

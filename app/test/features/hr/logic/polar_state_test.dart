@@ -10,12 +10,11 @@ void main() {
       const s = PolarState();
       expect(s.connectionState, PolarConnectionState.disconnected);
       expect(s.latestBpm, isNull);
-      expect(s.relayActive, isFalse);
-      expect(s.relayStatus, RelayPushStatus.idle);
-      expect(s.ecgRelayActive, isFalse);
+      expect(s.h10RelayActive, isFalse);
+      expect(s.hrRelayStatus, RelayPushStatus.idle);
       expect(s.ecgRelayStatus, RelayPushStatus.idle);
-      expect(s.accRelayActive, isFalse);
       expect(s.accRelayStatus, RelayPushStatus.idle);
+      expect(s.h10RelayStatus, RelayPushStatus.idle);
     });
   });
 
@@ -25,18 +24,16 @@ void main() {
       final next = base.copyWith(
         connectionState: PolarConnectionState.connected,
         latestBpm: 72,
-        relayActive: true,
-        relayStatus: RelayPushStatus.ok,
+        h10RelayActive: true,
+        hrRelayStatus: RelayPushStatus.ok,
       );
 
       expect(next.connectionState, PolarConnectionState.connected);
       expect(next.latestBpm, 72);
-      expect(next.relayActive, isTrue);
-      expect(next.relayStatus, RelayPushStatus.ok);
-      // ECG and ACC fields stay at defaults.
-      expect(next.ecgRelayActive, isFalse);
+      expect(next.h10RelayActive, isTrue);
+      expect(next.hrRelayStatus, RelayPushStatus.ok);
+      // ECG and ACC statuses stay at defaults.
       expect(next.ecgRelayStatus, RelayPushStatus.idle);
-      expect(next.accRelayActive, isFalse);
       expect(next.accRelayStatus, RelayPushStatus.idle);
     });
 
@@ -54,19 +51,52 @@ void main() {
 
     test('omitting latestBpm preserves original value', () {
       const base = PolarState(latestBpm: 80);
-      final next = base.copyWith(relayActive: true);
+      final next = base.copyWith(h10RelayActive: true);
       expect(next.latestBpm, 80);
     });
+  });
 
-    test('ecgRelayActive and accRelayActive toggle independently', () {
-      const base = PolarState();
-      final s1 = base.copyWith(ecgRelayActive: true);
-      expect(s1.ecgRelayActive, isTrue);
-      expect(s1.accRelayActive, isFalse);
-
-      final s2 = s1.copyWith(accRelayActive: true);
-      expect(s2.ecgRelayActive, isTrue);
-      expect(s2.accRelayActive, isTrue);
+  group('PolarState.h10RelayStatus (computed)', () {
+    test('idle when h10RelayActive is false regardless of sub-statuses', () {
+      final s = const PolarState().copyWith(
+        hrRelayStatus: RelayPushStatus.ok,
+        ecgRelayStatus: RelayPushStatus.ok,
+        accRelayStatus: RelayPushStatus.ok,
+      );
+      expect(s.h10RelayStatus, RelayPushStatus.idle);
     });
+
+    test('ok when active and all three sub-relays report ok', () {
+      final s = const PolarState().copyWith(
+        h10RelayActive: true,
+        hrRelayStatus: RelayPushStatus.ok,
+        ecgRelayStatus: RelayPushStatus.ok,
+        accRelayStatus: RelayPushStatus.ok,
+      );
+      expect(s.h10RelayStatus, RelayPushStatus.ok);
+    });
+
+    test('error when active and any sub-relay reports error', () {
+      final s = const PolarState().copyWith(
+        h10RelayActive: true,
+        hrRelayStatus: RelayPushStatus.ok,
+        ecgRelayStatus: RelayPushStatus.error,
+        accRelayStatus: RelayPushStatus.ok,
+      );
+      expect(s.h10RelayStatus, RelayPushStatus.error);
+    });
+
+    test(
+      'idle (initialising) when active but not all sub-relays confirmed ok',
+      () {
+        final s = const PolarState().copyWith(
+          h10RelayActive: true,
+          hrRelayStatus: RelayPushStatus.ok,
+          ecgRelayStatus: RelayPushStatus.idle,
+          accRelayStatus: RelayPushStatus.idle,
+        );
+        expect(s.h10RelayStatus, RelayPushStatus.idle);
+      },
+    );
   });
 }

@@ -6,42 +6,52 @@ import '../../../services/relay_push_service.dart';
 class PolarState {
   final PolarConnectionState connectionState;
   final int? latestBpm;
-  final bool relayActive;
-  final RelayPushStatus relayStatus;
-  final bool ecgRelayActive;
+  final bool h10RelayActive;
+  final RelayPushStatus hrRelayStatus;
   final RelayPushStatus ecgRelayStatus;
-  final bool accRelayActive;
   final RelayPushStatus accRelayStatus;
 
   const PolarState({
     this.connectionState = PolarConnectionState.disconnected,
     this.latestBpm,
-    this.relayActive = false,
-    this.relayStatus = RelayPushStatus.idle,
-    this.ecgRelayActive = false,
+    this.h10RelayActive = false,
+    this.hrRelayStatus = RelayPushStatus.idle,
     this.ecgRelayStatus = RelayPushStatus.idle,
-    this.accRelayActive = false,
     this.accRelayStatus = RelayPushStatus.idle,
   });
+
+  /// Aggregate status for the UI chip.
+  /// error if any sub-relay errored; ok if all three confirmed ok;
+  /// idle otherwise (inactive or still initialising).
+  RelayPushStatus get h10RelayStatus {
+    if (!h10RelayActive) return RelayPushStatus.idle;
+    if (hrRelayStatus == RelayPushStatus.error ||
+        ecgRelayStatus == RelayPushStatus.error ||
+        accRelayStatus == RelayPushStatus.error) {
+      return RelayPushStatus.error;
+    }
+    if (hrRelayStatus == RelayPushStatus.ok &&
+        ecgRelayStatus == RelayPushStatus.ok &&
+        accRelayStatus == RelayPushStatus.ok) {
+      return RelayPushStatus.ok;
+    }
+    return RelayPushStatus.idle;
+  }
 
   PolarState copyWith({
     PolarConnectionState? connectionState,
     int? latestBpm,
     bool? latestBpmSet,
-    bool? relayActive,
-    RelayPushStatus? relayStatus,
-    bool? ecgRelayActive,
+    bool? h10RelayActive,
+    RelayPushStatus? hrRelayStatus,
     RelayPushStatus? ecgRelayStatus,
-    bool? accRelayActive,
     RelayPushStatus? accRelayStatus,
   }) => PolarState(
     connectionState: connectionState ?? this.connectionState,
     latestBpm: latestBpmSet == true ? null : (latestBpm ?? this.latestBpm),
-    relayActive: relayActive ?? this.relayActive,
-    relayStatus: relayStatus ?? this.relayStatus,
-    ecgRelayActive: ecgRelayActive ?? this.ecgRelayActive,
+    h10RelayActive: h10RelayActive ?? this.h10RelayActive,
+    hrRelayStatus: hrRelayStatus ?? this.hrRelayStatus,
     ecgRelayStatus: ecgRelayStatus ?? this.ecgRelayStatus,
-    accRelayActive: accRelayActive ?? this.accRelayActive,
     accRelayStatus: accRelayStatus ?? this.accRelayStatus,
   );
 }
@@ -63,11 +73,9 @@ class PolarNotifier extends Notifier<PolarState> {
         state = state.copyWith(
           connectionState: s,
           latestBpmSet: true,
-          relayActive: false,
-          relayStatus: RelayPushStatus.idle,
-          ecgRelayActive: false,
+          h10RelayActive: false,
+          hrRelayStatus: RelayPushStatus.idle,
           ecgRelayStatus: RelayPushStatus.idle,
-          accRelayActive: false,
           accRelayStatus: RelayPushStatus.idle,
         );
       } else {
@@ -79,7 +87,7 @@ class PolarNotifier extends Notifier<PolarState> {
       (hr) => state = state.copyWith(latestBpm: hr.bpm),
     );
     final hrRelaySub = hrRelay.statusStream.listen(
-      (s) => state = state.copyWith(relayStatus: s),
+      (s) => state = state.copyWith(hrRelayStatus: s),
     );
     final ecgRelaySub = ecgRelay.statusStream.listen(
       (s) => state = state.copyWith(ecgRelayStatus: s),
@@ -110,58 +118,34 @@ class PolarNotifier extends Notifier<PolarState> {
     ref.read(ecgRelayPushServiceProvider).stop();
     ref.read(accRelayPushServiceProvider).stop();
     state = state.copyWith(
-      relayActive: false,
-      relayStatus: RelayPushStatus.idle,
-      ecgRelayActive: false,
+      h10RelayActive: false,
+      hrRelayStatus: RelayPushStatus.idle,
       ecgRelayStatus: RelayPushStatus.idle,
-      accRelayActive: false,
       accRelayStatus: RelayPushStatus.idle,
     );
     await ref.read(polarH10ServiceProvider).disconnect();
   }
 
-  void toggleRelay() {
-    final relay = ref.read(hrRelayPushServiceProvider);
+  void toggleH10Relay() {
+    final hrRelay = ref.read(hrRelayPushServiceProvider);
+    final ecgRelay = ref.read(ecgRelayPushServiceProvider);
+    final accRelay = ref.read(accRelayPushServiceProvider);
     final h10 = ref.read(polarH10ServiceProvider);
-    if (state.relayActive) {
-      relay.stop();
+    if (state.h10RelayActive) {
+      hrRelay.stop();
+      ecgRelay.stop();
+      accRelay.stop();
       state = state.copyWith(
-        relayActive: false,
-        relayStatus: RelayPushStatus.idle,
-      );
-    } else {
-      relay.start(h10.hrStream.map((hr) => hr.toJson()));
-      state = state.copyWith(relayActive: true);
-    }
-  }
-
-  void toggleEcgRelay() {
-    final relay = ref.read(ecgRelayPushServiceProvider);
-    final h10 = ref.read(polarH10ServiceProvider);
-    if (state.ecgRelayActive) {
-      relay.stop();
-      state = state.copyWith(
-        ecgRelayActive: false,
+        h10RelayActive: false,
+        hrRelayStatus: RelayPushStatus.idle,
         ecgRelayStatus: RelayPushStatus.idle,
-      );
-    } else {
-      relay.start(h10.ecgStream.map((ecg) => ecg.toJson()));
-      state = state.copyWith(ecgRelayActive: true);
-    }
-  }
-
-  void toggleAccRelay() {
-    final relay = ref.read(accRelayPushServiceProvider);
-    final h10 = ref.read(polarH10ServiceProvider);
-    if (state.accRelayActive) {
-      relay.stop();
-      state = state.copyWith(
-        accRelayActive: false,
         accRelayStatus: RelayPushStatus.idle,
       );
     } else {
-      relay.start(h10.accStream.map((acc) => acc.toJson()));
-      state = state.copyWith(accRelayActive: true);
+      hrRelay.start(h10.hrStream.map((hr) => hr.toJson()));
+      ecgRelay.start(h10.ecgStream.map((ecg) => ecg.toJson()));
+      accRelay.start(h10.accStream.map((acc) => acc.toJson()));
+      state = state.copyWith(h10RelayActive: true);
     }
   }
 }
