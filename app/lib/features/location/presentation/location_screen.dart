@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../logic/location_provider.dart';
+import '../logic/relay_provider.dart';
 import '../models/location_data.dart';
+import '../../../services/relay_push_service.dart';
 
 class LocationScreen extends ConsumerWidget {
   const LocationScreen({super.key});
@@ -13,27 +15,94 @@ class LocationScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('GPS Location')),
-      body: locationAsync.when(
-        data: (loc) => _LocationDisplay(loc: loc),
-        loading: () => const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Acquiring GPS fix…'),
-            ],
-          ),
-        ),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'GPS error: $e',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-              textAlign: TextAlign.center,
+      body: Column(
+        children: [
+          Expanded(
+            child: locationAsync.when(
+              data: (loc) => _LocationDisplay(loc: loc),
+              loading: () => const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Acquiring GPS fix…'),
+                  ],
+                ),
+              ),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'GPS error: $e',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
             ),
           ),
+          const Divider(height: 1),
+          const _RelayControls(),
+        ],
+      ),
+    );
+  }
+}
+
+class _RelayControls extends ConsumerWidget {
+  const _RelayControls();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final relay = ref.watch(relayNotifierProvider);
+
+    final Color color;
+    final IconData icon;
+    final String label;
+
+    if (!relay.active) {
+      color = Colors.grey;
+      icon = Icons.cloud_off_outlined;
+      label = 'Relay off';
+    } else if (relay.status == RelayPushStatus.ok) {
+      color = Colors.green;
+      icon = Icons.cloud_done;
+      label = 'Relay OK';
+    } else if (relay.status == RelayPushStatus.error) {
+      color = Colors.red;
+      icon = Icons.cloud_off;
+      label = 'Relay error';
+    } else {
+      color = Colors.orange;
+      icon = Icons.sync;
+      label = 'Connecting…';
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: () =>
+                  ref.read(relayNotifierProvider.notifier).toggle(),
+              icon: Icon(relay.active ? Icons.stop : Icons.play_arrow),
+              label: Text(relay.active ? 'Stop' : 'Push GPS'),
+              style: relay.active
+                  ? FilledButton.styleFrom(backgroundColor: Colors.red)
+                  : null,
+            ),
+          ],
         ),
       ),
     );
