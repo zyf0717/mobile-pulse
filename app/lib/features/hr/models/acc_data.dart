@@ -6,7 +6,8 @@ class AccData {
   const AccData({required this.samples, required this.timestamp});
 
   Map<String, dynamic> toJson() => {
-    'samples': samples,
+    'samples_mg': samples,
+    'sample_rate_hz': 200,
     'timestamp': timestamp.toUtc().toIso8601String(),
   };
 }

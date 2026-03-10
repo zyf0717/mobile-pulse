@@ -6,7 +6,8 @@ class EcgData {
   const EcgData({required this.samples, required this.timestamp});
 
   Map<String, dynamic> toJson() => {
-    'samples': samples,
+    'samples_uv': samples,
+    'sample_rate_hz': 130,
     'timestamp': timestamp.toUtc().toIso8601String(),
   };
 }
