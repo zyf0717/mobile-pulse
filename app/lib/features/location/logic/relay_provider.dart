@@ -38,7 +38,7 @@ class RelayNotifier extends Notifier<RelayState> {
       service.stop();
       state = state.copyWith(active: false, status: RelayPushStatus.idle);
     } else {
-      service.start(repository.locationStream);
+      service.start(repository.locationStream.map((loc) => loc.toJson()));
       state = state.copyWith(active: true);
     }
   }

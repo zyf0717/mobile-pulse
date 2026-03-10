@@ -42,7 +42,7 @@ void main() {
   tearDown(() => service.stop());
 
   group('RelayPushService.start', () {
-    test('POSTs JSON for each emitted LocationData', () async {
+    test('POSTs JSON for each emitted map', () async {
       final location = _makeLocation();
 
       when(
@@ -53,9 +53,9 @@ void main() {
         ),
       ).thenAnswer((_) async => http.Response('', 200));
 
-      final controller = StreamController<LocationData>();
+      final controller = StreamController<Map<String, dynamic>>();
       service.start(controller.stream);
-      controller.add(location);
+      controller.add(location.toJson());
 
       // Allow the async _post to run.
       await Future<void>.delayed(Duration.zero);
@@ -91,9 +91,9 @@ void main() {
         ),
       ).thenAnswer((_) async => http.Response('', 200));
 
-      final controller = StreamController<LocationData>();
+      final controller = StreamController<Map<String, dynamic>>();
       service.start(controller.stream);
-      controller.add(_makeLocation());
+      controller.add(_makeLocation().toJson());
 
       await Future<void>.delayed(Duration.zero);
 
@@ -124,9 +124,9 @@ void main() {
         ),
       ).thenAnswer((_) async => http.Response('Server Error', 500));
 
-      final controller = StreamController<LocationData>();
+      final controller = StreamController<Map<String, dynamic>>();
       service.start(controller.stream);
-      controller.add(_makeLocation());
+      controller.add(_makeLocation().toJson());
 
       await expectLater(
         Future<void>.delayed(Duration.zero),
@@ -145,9 +145,9 @@ void main() {
         ),
       ).thenThrow(Exception('network unreachable'));
 
-      final controller = StreamController<LocationData>();
+      final controller = StreamController<Map<String, dynamic>>();
       service.start(controller.stream);
-      controller.add(_makeLocation());
+      controller.add(_makeLocation().toJson());
 
       await expectLater(Future<void>.delayed(Duration.zero), completes);
 
@@ -165,11 +165,11 @@ void main() {
         ),
       ).thenAnswer((_) async => http.Response('', 200));
 
-      final controller = StreamController<LocationData>();
+      final controller = StreamController<Map<String, dynamic>>();
       service.start(controller.stream);
       service.stop();
 
-      controller.add(_makeLocation());
+      controller.add(_makeLocation().toJson());
       await Future<void>.delayed(Duration.zero);
 
       verifyNever(
