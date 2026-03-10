@@ -29,6 +29,15 @@ class LocationData {
   /// Speed in km/h.
   double get speedKmh => speed * 3.6;
 
+  Map<String, dynamic> toJson() => {
+    'latitude': latitude,
+    'longitude': longitude,
+    'accuracy': accuracy,
+    'altitude': altitude,
+    'speed': speed,
+    'timestamp': timestamp.toUtc().toIso8601String(),
+  };
+
   @override
   String toString() =>
       'LocationData(lat=$latitude, lng=$longitude, accuracy=${accuracy.toStringAsFixed(1)}m, '

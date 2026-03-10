@@ -19,6 +19,7 @@ app/.flutter-plugins-dependencies
 app/.packages
 app/build/
 app/flutter_*.png
+app/dart_defines.env
 
 # --- Android ---
 app/android/.gradle/
