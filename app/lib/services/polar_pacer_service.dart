@@ -6,6 +6,7 @@ import '../features/polar/models/acc_data.dart';
 import '../features/polar/models/hr_data.dart';
 import '../features/polar_pacer/models/ppi_data.dart';
 import 'polar_connection_state.dart';
+import 'polar_instance.dart';
 
 class PolarPacerService {
   /// The 8-character Polar device ID. Defaults to the Polar Pacer DA2E2324;
@@ -14,8 +15,8 @@ class PolarPacerService {
 
   PolarPacerService({this.deviceId = 'DA2E2324'});
 
-  // Shared singleton with PolarH10Service.
-  static final _polar = Polar();
+  // App-wide shared Polar instance — see polar_instance.dart.
+  static final _polar = sharedPolar;
 
   final _connectionController =
       StreamController<PolarConnectionState>.broadcast();

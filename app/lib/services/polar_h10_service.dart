@@ -6,6 +6,7 @@ import '../features/polar/models/acc_data.dart';
 import '../features/polar/models/hr_data.dart';
 import '../features/polar_h10/models/ecg_data.dart';
 import 'polar_connection_state.dart';
+import 'polar_instance.dart';
 
 export 'polar_connection_state.dart';
 
@@ -15,8 +16,8 @@ class PolarH10Service {
 
   PolarH10Service({required this.deviceId});
 
-  // Shared singleton — safe to use from multiple service instances.
-  static final _polar = Polar();
+  // App-wide shared Polar instance — see polar_instance.dart.
+  static final _polar = sharedPolar;
 
   final _connectionController =
       StreamController<PolarConnectionState>.broadcast();
