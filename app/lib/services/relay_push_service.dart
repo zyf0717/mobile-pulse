@@ -6,17 +6,20 @@ import 'package:http/http.dart' as http;
 enum RelayPushStatus { idle, ok, error }
 
 class RelayPushService {
-  static const String _envRelayUrl = String.fromEnvironment('RELAY_URL');
-
   final String _relayUrl;
+  final String _relayUrlLabel;
   final http.Client _client;
   final _statusController = StreamController<RelayPushStatus>.broadcast();
 
   StreamSubscription<Map<String, dynamic>>? _subscription;
 
-  RelayPushService({http.Client? client, String? relayUrl})
-    : _client = client ?? http.Client(),
-      _relayUrl = relayUrl ?? _envRelayUrl;
+  RelayPushService({
+    http.Client? client,
+    String relayUrl = '',
+    String relayUrlLabel = 'relay URL',
+  }) : _client = client ?? http.Client(),
+       _relayUrl = relayUrl,
+       _relayUrlLabel = relayUrlLabel;
 
   /// Emits a [RelayPushStatus] after every POST attempt, and [RelayPushStatus.idle] on stop.
   Stream<RelayPushStatus> get statusStream => _statusController.stream;
@@ -41,7 +44,7 @@ class RelayPushService {
     if (_relayUrl.isEmpty) {
       _statusController.add(RelayPushStatus.error);
       _log(
-        'RELAY_URL is not set — launch with --dart-define-from-file=dart_defines.env',
+        '$_relayUrlLabel is not set — launch with --dart-define-from-file=dart_defines.env',
       );
       return;
     }

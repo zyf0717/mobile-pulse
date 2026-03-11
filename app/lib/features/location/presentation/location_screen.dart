@@ -9,6 +9,8 @@ import '../../../services/polar_h10_service.dart';
 import '../../hr/logic/polar_provider.dart';
 import '../../pulse/logic/pulse_provider.dart';
 
+const double _controlButtonWidth = 152;
+
 class LocationScreen extends ConsumerWidget {
   const LocationScreen({super.key});
 
@@ -108,7 +110,7 @@ class _BottomPanel extends ConsumerWidget {
           _ControlRow(
             leading: _H10StatusChip(polar: polar),
             trailing: SizedBox(
-              width: 120,
+              width: _controlButtonWidth,
               child: isIdle
                   ? OutlinedButton(
                       onPressed: pNotifier.connect,
@@ -123,11 +125,12 @@ class _BottomPanel extends ConsumerWidget {
                       ),
                       child: const Text('Disconnect'),
                     )
-                  : const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                  : OutlinedButton(
+                      onPressed: null,
+                      child: const Text(
+                        'Connecting...',
+                        maxLines: 1,
+                        softWrap: false,
                       ),
                     ),
             ),
@@ -362,13 +365,13 @@ class _RelayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 120,
+      width: _controlButtonWidth,
       child: FilledButton(
         onPressed: onToggle,
         style: active
             ? FilledButton.styleFrom(backgroundColor: Colors.red)
             : null,
-        child: Text(active ? 'Stop' : pushLabel),
+        child: Text(active ? 'Stop' : pushLabel, maxLines: 1, softWrap: false),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../config/app_env.dart';
 import '../../../services/polar_h10_service.dart';
 import '../../../services/relay_push_service.dart';
 
@@ -181,23 +182,28 @@ class PolarNotifier extends Notifier<PolarState> {
 }
 
 final polarH10ServiceProvider = Provider<PolarH10Service>((ref) {
-  const deviceId = String.fromEnvironment('POLAR_DEVICE_ID');
-  return PolarH10Service(deviceId: deviceId);
+  return PolarH10Service(deviceId: AppEnv.polarH10DeviceId);
 });
 
 final hrRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_HR_URL');
-  return RelayPushService(relayUrl: url);
+  return RelayPushService(
+    relayUrl: AppEnv.relayH10HrUrl,
+    relayUrlLabel: AppEnvKeys.relayH10HrUrl,
+  );
 });
 
 final ecgRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_ECG_URL');
-  return RelayPushService(relayUrl: url);
+  return RelayPushService(
+    relayUrl: AppEnv.relayH10EcgUrl,
+    relayUrlLabel: AppEnvKeys.relayH10EcgUrl,
+  );
 });
 
 final accRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_ACC_URL');
-  return RelayPushService(relayUrl: url);
+  return RelayPushService(
+    relayUrl: AppEnv.relayH10AccUrl,
+    relayUrlLabel: AppEnvKeys.relayH10AccUrl,
+  );
 });
 
 final polarNotifierProvider = NotifierProvider<PolarNotifier, PolarState>(

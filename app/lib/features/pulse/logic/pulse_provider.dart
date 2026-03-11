@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../config/app_env.dart';
 import '../../../services/pulse_service.dart';
 import '../../../services/relay_push_service.dart';
 
@@ -55,8 +56,10 @@ class PulseNotifier extends Notifier<PulseState> {
 final pulseServiceProvider = Provider<PulseService>((_) => PulseService());
 
 final pulseRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_PULSE_URL');
-  return RelayPushService(relayUrl: url);
+  return RelayPushService(
+    relayUrl: AppEnv.relayPulseUrl,
+    relayUrlLabel: AppEnvKeys.relayPulseUrl,
+  );
 });
 
 final pulseNotifierProvider = NotifierProvider<PulseNotifier, PulseState>(

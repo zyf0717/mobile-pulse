@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../config/app_env.dart';
 import '../../../services/relay_push_service.dart';
 import 'location_provider.dart';
 
@@ -53,8 +54,10 @@ class RelayNotifier extends Notifier<RelayState> {
 }
 
 final relayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_GPS_URL');
-  return RelayPushService(relayUrl: url);
+  return RelayPushService(
+    relayUrl: AppEnv.relayGpsUrl,
+    relayUrlLabel: AppEnvKeys.relayGpsUrl,
+  );
 });
 
 final relayNotifierProvider = NotifierProvider<RelayNotifier, RelayState>(
