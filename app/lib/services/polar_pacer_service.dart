@@ -7,6 +7,19 @@ import '../features/polar/common/models/acc_data.dart';
 import '../features/polar/common/models/hr_data.dart';
 import '../features/polar/common/models/polar_connection_state.dart';
 import '../features/polar/common/models/ppi_data.dart';
+import 'app_logger.dart';
+
+class PolarPacerError {
+  final String message;
+  final String? stream;
+  final bool isConnectionError;
+
+  const PolarPacerError({
+    required this.message,
+    this.stream,
+    this.isConnectionError = false,
+  });
+}
 
 class PolarPacerService {
   static const _methodChannel = MethodChannel(
@@ -23,7 +36,7 @@ class PolarPacerService {
   final _hrController = StreamController<HrData>.broadcast();
   final _accController = StreamController<AccData>.broadcast();
   final _ppiController = StreamController<PpiData>.broadcast();
-  final _errorController = StreamController<String>.broadcast();
+  final _errorController = StreamController<PolarPacerError>.broadcast();
 
   StreamSubscription<dynamic>? _eventSubscription;
 
@@ -45,38 +58,53 @@ class PolarPacerService {
   Stream<HrData> get hrStream => _hrController.stream;
   Stream<AccData> get accStream => _accController.stream;
   Stream<PpiData> get ppiStream => _ppiController.stream;
-  Stream<String> get errorStream => _errorController.stream;
+  Stream<PolarPacerError> get errorStream => _errorController.stream;
 
   Future<void> connect() async {
     if (!await _requestPermissions()) {
       if (!_connectionController.isClosed) {
+        AppLogger.log('Polar/Pacer', 'Bluetooth permissions denied');
         _connectionController.add(PolarConnectionState.error);
       }
       return;
     }
     if (!isConfigured) {
       if (!_connectionController.isClosed) {
+        AppLogger.log('Polar/Pacer', 'POLAR_PACER_DEVICE_ID is not set');
         _connectionController.add(PolarConnectionState.error);
       }
       return;
     }
     if (!_connectionController.isClosed) {
+      AppLogger.log(
+        'Polar/Pacer',
+        'state=${PolarConnectionState.scanning.name}',
+      );
       _connectionController.add(PolarConnectionState.scanning);
     }
     await _methodChannel.invokeMethod<void>('connect', {'deviceId': deviceId});
   }
 
-  Future<void> disconnect() => _methodChannel.invokeMethod<void>('disconnect');
-
-  Future<void> startRelayStreams() async {
-    await _methodChannel.invokeMethod<void>('startAccStreaming');
-    await _methodChannel.invokeMethod<void>('startPpiStreaming');
+  Future<void> disconnect() {
+    AppLogger.log('Polar/Pacer', 'disconnect requested');
+    return _methodChannel.invokeMethod<void>('disconnect');
   }
 
-  Future<void> stopRelayStreams() async {
-    await _methodChannel.invokeMethod<void>('stopAccStreaming');
-    await _methodChannel.invokeMethod<void>('stopPpiStreaming');
+  Future<void> startAccStreaming() {
+    AppLogger.log('Polar/Pacer', 'start ACC relay');
+    return _methodChannel.invokeMethod<void>('startAccStreaming');
   }
+
+  Future<void> startPpiStreaming() {
+    AppLogger.log('Polar/Pacer', 'start PPI relay');
+    return _methodChannel.invokeMethod<void>('startPpiStreaming');
+  }
+
+  Future<void> stopAccStreaming() =>
+      _methodChannel.invokeMethod<void>('stopAccStreaming');
+
+  Future<void> stopPpiStreaming() =>
+      _methodChannel.invokeMethod<void>('stopPpiStreaming');
 
   void dispose() {
     _eventSubscription?.cancel();
@@ -108,6 +136,7 @@ class PolarPacerService {
           _ => PolarConnectionState.disconnected,
         };
         if (!_connectionController.isClosed) {
+          AppLogger.log('Polar/Pacer', 'state=${state.name}');
           _connectionController.add(state);
         }
       case 'hr':
@@ -163,10 +192,22 @@ class PolarPacerService {
       case 'error':
         final message =
             mapped['message'] as String? ?? 'Polar Pacer stream error';
+        final scope = mapped['scope'] as String?;
+        final stream = mapped['stream'] as String?;
         if (!_errorController.isClosed) {
-          _errorController.add(message);
+          AppLogger.log(
+            'Polar/Pacer',
+            stream == null ? message : '$stream error: $message',
+          );
+          _errorController.add(
+            PolarPacerError(
+              message: message,
+              stream: stream,
+              isConnectionError: scope != 'stream',
+            ),
+          );
         }
-        if (!_connectionController.isClosed) {
+        if (scope != 'stream' && !_connectionController.isClosed) {
           _connectionController.add(PolarConnectionState.error);
         }
     }

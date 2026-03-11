@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'features/location/logic/relay_provider.dart';
@@ -9,8 +10,9 @@ import 'features/polar/pacer/logic/pacer_provider.dart';
 import 'features/pulse/logic/pulse_provider.dart';
 import 'features/polar/common/models/polar_connection_state.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FlutterBluePlus.setLogLevel(LogLevel.warning, color: false);
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const ProviderScope(child: MobilePulseApp()));
 }

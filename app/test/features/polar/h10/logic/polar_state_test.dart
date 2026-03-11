@@ -75,18 +75,31 @@ void main() {
       expect(s.h10RelayStatus, RelayPushStatus.ok);
     });
 
-    test('error when active and any sub-relay reports error', () {
+    test('ok when active and at least one sub-relay reports ok', () {
       final s = const PolarState().copyWith(
         h10RelayActive: true,
         hrRelayStatus: RelayPushStatus.ok,
         ecgRelayStatus: RelayPushStatus.error,
         accRelayStatus: RelayPushStatus.ok,
       );
-      expect(s.h10RelayStatus, RelayPushStatus.error);
+      expect(s.h10RelayStatus, RelayPushStatus.ok);
     });
 
     test(
-      'idle (initialising) when active but not all sub-relays confirmed ok',
+      'error when active, at least one sub-relay errors, and none are ok',
+      () {
+        final s = const PolarState().copyWith(
+          h10RelayActive: true,
+          hrRelayStatus: RelayPushStatus.idle,
+          ecgRelayStatus: RelayPushStatus.error,
+          accRelayStatus: RelayPushStatus.idle,
+        );
+        expect(s.h10RelayStatus, RelayPushStatus.error);
+      },
+    );
+
+    test(
+      'ok when active and one H10 sub-relay is healthy while others are idle',
       () {
         final s = const PolarState().copyWith(
           h10RelayActive: true,
@@ -94,7 +107,7 @@ void main() {
           ecgRelayStatus: RelayPushStatus.idle,
           accRelayStatus: RelayPushStatus.idle,
         );
-        expect(s.h10RelayStatus, RelayPushStatus.idle);
+        expect(s.h10RelayStatus, RelayPushStatus.ok);
       },
     );
   });

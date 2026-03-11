@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/app_env.dart';
@@ -5,6 +7,9 @@ import '../../../../services/polar_pacer_service.dart';
 import '../../../../services/relay_push_service.dart';
 import '../../common/logic/polar_relay_status.dart';
 import '../../common/models/polar_connection_state.dart';
+
+const _defaultPacerConnectRetryBaseDelay = Duration(seconds: 2);
+const _defaultPacerConnectRetryMaxDelay = Duration(seconds: 10);
 
 class PacerState {
   final bool isConfigured;
@@ -30,6 +35,7 @@ class PacerState {
   RelayPushStatus get pacerRelayStatus => aggregateRelayStatus(
     active: pacerRelayActive,
     statuses: [hrRelayStatus, accRelayStatus, ppiRelayStatus],
+    allowPartialSuccess: true,
   );
 
   PacerState copyWith({
@@ -57,6 +63,9 @@ class PacerState {
 
 class PacerNotifier extends Notifier<PacerState> {
   bool _startAllPending = false;
+  Timer? _connectRetryTimer;
+  int _connectRetryAttempt = 0;
+  String? _lastConnectionErrorMessage;
 
   @override
   PacerState build() {
@@ -68,7 +77,7 @@ class PacerNotifier extends Notifier<PacerState> {
     final connSub = pacer.connectionState.listen((s) {
       if (s == PolarConnectionState.disconnected ||
           s == PolarConnectionState.error) {
-        _startAllPending = false;
+        final shouldRetryConnect = _startAllPending;
         hrRelay.stop();
         accRelay.stop();
         ppiRelay.stop();
@@ -81,9 +90,19 @@ class PacerNotifier extends Notifier<PacerState> {
           accRelayStatus: RelayPushStatus.idle,
           ppiRelayStatus: RelayPushStatus.idle,
         );
+        if (shouldRetryConnect) {
+          _scheduleConnectRetry(
+            s == PolarConnectionState.error
+                ? (_lastConnectionErrorMessage ?? 'Pacer connect failed.')
+                : 'Pacer disconnected before relay start.',
+          );
+        }
       } else {
+        _cancelConnectRetry();
         state = state.copyWith(connectionState: s);
         if (s == PolarConnectionState.connected && _startAllPending) {
+          _connectRetryAttempt = 0;
+          _lastConnectionErrorMessage = null;
           _startAllPending = false;
           _startPacerRelay();
         }
@@ -100,9 +119,22 @@ class PacerNotifier extends Notifier<PacerState> {
         state = state.copyWith(latestBpm: ppi.samples.first.hr);
       }
     });
-    final errorSub = pacer.errorStream.listen(
-      (message) => state = state.copyWith(lastError: message),
-    );
+    final errorSub = pacer.errorStream.listen((error) {
+      if (error.isConnectionError) {
+        _lastConnectionErrorMessage = error.message;
+      }
+      if (!error.isConnectionError) {
+        switch (error.stream) {
+          case 'acc':
+            state = state.copyWith(accRelayStatus: RelayPushStatus.error);
+            break;
+          case 'ppi':
+            state = state.copyWith(ppiRelayStatus: RelayPushStatus.error);
+            break;
+        }
+      }
+      state = state.copyWith(lastError: error.message);
+    });
     final hrRelaySub = hrRelay.statusStream.listen(
       (s) => state = state.copyWith(hrRelayStatus: s),
     );
@@ -114,6 +146,7 @@ class PacerNotifier extends Notifier<PacerState> {
     );
 
     ref.onDispose(() {
+      _cancelConnectRetry();
       connSub.cancel();
       hrSub.cancel();
       ppiSub.cancel();
@@ -132,6 +165,9 @@ class PacerNotifier extends Notifier<PacerState> {
 
   Future<void> connect() async {
     if (!state.isConfigured) return;
+    _cancelConnectRetry();
+    _connectRetryAttempt = 0;
+    _lastConnectionErrorMessage = null;
     await ref.read(polarPacerServiceProvider).connect();
   }
 
@@ -141,12 +177,17 @@ class PacerNotifier extends Notifier<PacerState> {
       if (!state.pacerRelayActive) return _startPacerRelay();
       return Future.value();
     }
+    _cancelConnectRetry();
+    _connectRetryAttempt = 0;
+    _lastConnectionErrorMessage = null;
     _startAllPending = true;
     return ref.read(polarPacerServiceProvider).connect();
   }
 
   Future<void> stopAll() async {
     _startAllPending = false;
+    _cancelConnectRetry();
+    _connectRetryAttempt = 0;
     await disconnect();
   }
 
@@ -159,6 +200,9 @@ class PacerNotifier extends Notifier<PacerState> {
   }
 
   Future<void> disconnect() async {
+    _cancelConnectRetry();
+    _connectRetryAttempt = 0;
+    _lastConnectionErrorMessage = null;
     await _stopPacerRelay();
     await ref.read(polarPacerServiceProvider).disconnect();
   }
@@ -168,11 +212,24 @@ class PacerNotifier extends Notifier<PacerState> {
     final accRelay = ref.read(pacerAccRelayPushServiceProvider);
     final ppiRelay = ref.read(pacerPpiRelayPushServiceProvider);
     final pacer = ref.read(polarPacerServiceProvider);
+    state = state.copyWith(pacerRelayActive: true, clearLastError: true);
     hrRelay.start(pacer.hrStream.map((hr) => hr.toJson()));
     accRelay.start(pacer.accStream.map((acc) => acc.toJson()));
     ppiRelay.start(pacer.ppiStream.map((ppi) => ppi.toJson()));
-    await pacer.startRelayStreams();
-    state = state.copyWith(pacerRelayActive: true, clearLastError: true);
+    await _startStream(
+      start: pacer.startAccStreaming,
+      stopRelay: accRelay.stop,
+      statusUpdate: () =>
+          state = state.copyWith(accRelayStatus: RelayPushStatus.error),
+      messagePrefix: 'ACC',
+    );
+    await _startStream(
+      start: pacer.startPpiStreaming,
+      stopRelay: ppiRelay.stop,
+      statusUpdate: () =>
+          state = state.copyWith(ppiRelayStatus: RelayPushStatus.error),
+      messagePrefix: 'PPI',
+    );
   }
 
   Future<void> _stopPacerRelay() async {
@@ -182,13 +239,67 @@ class PacerNotifier extends Notifier<PacerState> {
     hrRelay.stop();
     accRelay.stop();
     ppiRelay.stop();
-    await ref.read(polarPacerServiceProvider).stopRelayStreams();
+    final pacer = ref.read(polarPacerServiceProvider);
+    await pacer.stopAccStreaming();
+    await pacer.stopPpiStreaming();
     state = state.copyWith(
       pacerRelayActive: false,
       hrRelayStatus: RelayPushStatus.idle,
       accRelayStatus: RelayPushStatus.idle,
       ppiRelayStatus: RelayPushStatus.idle,
     );
+  }
+
+  Future<void> _startStream({
+    required Future<void> Function() start,
+    required void Function() stopRelay,
+    required void Function() statusUpdate,
+    required String messagePrefix,
+  }) async {
+    try {
+      await start();
+    } catch (error) {
+      stopRelay();
+      statusUpdate();
+      state = state.copyWith(lastError: '$messagePrefix stream failed: $error');
+    }
+  }
+
+  void _scheduleConnectRetry(String message) {
+    _cancelConnectRetry();
+    final delay = _nextConnectRetryDelay();
+    state = state.copyWith(lastError: _retryMessage(message, delay));
+    _connectRetryTimer = Timer(delay, () async {
+      _connectRetryTimer = null;
+      if (!_startAllPending || !state.isConfigured) return;
+      await ref.read(polarPacerServiceProvider).connect();
+    });
+  }
+
+  void _cancelConnectRetry() {
+    _connectRetryTimer?.cancel();
+    _connectRetryTimer = null;
+  }
+
+  Duration _nextConnectRetryDelay() {
+    final baseDelay = ref.read(pacerConnectRetryBaseDelayProvider);
+    final maxDelay = ref.read(pacerConnectRetryMaxDelayProvider);
+    final multiplier = 1 << _connectRetryAttempt.clamp(0, 4);
+    _connectRetryAttempt += 1;
+    final delayMs = baseDelay.inMilliseconds * multiplier;
+    return Duration(
+      milliseconds: delayMs.clamp(
+        baseDelay.inMilliseconds,
+        maxDelay.inMilliseconds,
+      ),
+    );
+  }
+
+  String _retryMessage(String message, Duration delay) {
+    if (delay.inSeconds >= 1) {
+      return '$message Retrying in ${delay.inSeconds}s.';
+    }
+    return '$message Retrying in ${delay.inMilliseconds}ms.';
   }
 }
 
@@ -219,4 +330,12 @@ final pacerPpiRelayPushServiceProvider = Provider<RelayPushService>((ref) {
 
 final pacerNotifierProvider = NotifierProvider<PacerNotifier, PacerState>(
   PacerNotifier.new,
+);
+
+final pacerConnectRetryBaseDelayProvider = Provider<Duration>(
+  (_) => _defaultPacerConnectRetryBaseDelay,
+);
+
+final pacerConnectRetryMaxDelayProvider = Provider<Duration>(
+  (_) => _defaultPacerConnectRetryMaxDelay,
 );

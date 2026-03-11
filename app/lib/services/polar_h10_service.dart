@@ -8,6 +8,7 @@ import '../features/polar/common/models/acc_data.dart';
 import '../features/polar/common/models/hr_data.dart';
 import '../features/polar/common/models/polar_connection_state.dart';
 import '../features/polar/h10/models/ecg_data.dart';
+import 'app_logger.dart';
 
 class PolarH10Service {
   // ── Standard BT Heart Rate service ──────────────────────────────────────
@@ -61,13 +62,14 @@ class PolarH10Service {
 
   Future<void> connect() async {
     if (_connectionController.isClosed) return;
-    _connectionController.add(PolarConnectionState.scanning);
+    _emitConnectionState(PolarConnectionState.scanning);
 
     // Runtime permissions (Android 12+).
     final scan = await Permission.bluetoothScan.request();
     final connect = await Permission.bluetoothConnect.request();
     if (!scan.isGranted || !connect.isGranted) {
-      _connectionController.add(PolarConnectionState.error);
+      AppLogger.log('Polar/H10', 'Bluetooth permissions denied');
+      _emitConnectionState(PolarConnectionState.error);
       return;
     }
 
@@ -115,14 +117,13 @@ class PolarH10Service {
 
     if (device == null) {
       if (!_connectionController.isClosed) {
-        _connectionController.add(PolarConnectionState.error);
+        AppLogger.log('Polar/H10', 'No matching H10 found for $deviceId');
+        _emitConnectionState(PolarConnectionState.error);
       }
       return;
     }
 
-    if (!_connectionController.isClosed) {
-      _connectionController.add(PolarConnectionState.connecting);
-    }
+    _emitConnectionState(PolarConnectionState.connecting);
     _device = device;
 
     // Only call connect() if the device isn't already connected at the system
@@ -134,7 +135,8 @@ class PolarH10Service {
         await device.connect(autoConnect: false);
       } catch (e) {
         if (!_connectionController.isClosed) {
-          _connectionController.add(PolarConnectionState.error);
+          AppLogger.log('Polar/H10', 'Connect failed: $e');
+          _emitConnectionState(PolarConnectionState.error);
         }
         return;
       }
@@ -145,9 +147,7 @@ class PolarH10Service {
       if (state == BluetoothConnectionState.disconnected) {
         _hrNotifySub?.cancel();
         _pmdDataSub?.cancel();
-        if (!_connectionController.isClosed) {
-          _connectionController.add(PolarConnectionState.disconnected);
-        }
+        _emitConnectionState(PolarConnectionState.disconnected);
       }
     });
 
@@ -185,9 +185,7 @@ class PolarH10Service {
       await pmdCpChar.write(_accStartCmd, withoutResponse: false);
     }
 
-    if (!_connectionController.isClosed) {
-      _connectionController.add(PolarConnectionState.connected);
-    }
+    _emitConnectionState(PolarConnectionState.connected);
   }
 
   Future<void> disconnect() async {
@@ -197,9 +195,7 @@ class PolarH10Service {
     await _connectionSub?.cancel();
     await _device?.disconnect();
     _device = null;
-    if (!_connectionController.isClosed) {
-      _connectionController.add(PolarConnectionState.disconnected);
-    }
+    _emitConnectionState(PolarConnectionState.disconnected);
   }
 
   void dispose() {
@@ -211,6 +207,12 @@ class PolarH10Service {
     _hrController.close();
     _ecgController.close();
     _accController.close();
+  }
+
+  void _emitConnectionState(PolarConnectionState state) {
+    if (_connectionController.isClosed) return;
+    AppLogger.log('Polar/H10', 'state=${state.name}');
+    _connectionController.add(state);
   }
 
   /// Returns the first device in [devices] that matches our Polar H10 criteria.

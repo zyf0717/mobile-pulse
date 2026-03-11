@@ -26,7 +26,7 @@ void main() {
   late StreamController<HrData> hrCtrl;
   late StreamController<AccData> accCtrl;
   late StreamController<PpiData> ppiCtrl;
-  late StreamController<String> errorCtrl;
+  late StreamController<PolarPacerError> errorCtrl;
   late StreamController<RelayPushStatus> hrStatusCtrl;
   late StreamController<RelayPushStatus> accStatusCtrl;
   late StreamController<RelayPushStatus> ppiStatusCtrl;
@@ -45,7 +45,7 @@ void main() {
     hrCtrl = StreamController<HrData>.broadcast();
     accCtrl = StreamController<AccData>.broadcast();
     ppiCtrl = StreamController<PpiData>.broadcast();
-    errorCtrl = StreamController<String>.broadcast();
+    errorCtrl = StreamController<PolarPacerError>.broadcast();
     hrStatusCtrl = StreamController<RelayPushStatus>.broadcast();
     accStatusCtrl = StreamController<RelayPushStatus>.broadcast();
     ppiStatusCtrl = StreamController<RelayPushStatus>.broadcast();
@@ -58,8 +58,10 @@ void main() {
     when(() => mockPacer.errorStream).thenAnswer((_) => errorCtrl.stream);
     when(() => mockPacer.connect()).thenAnswer((_) async {});
     when(() => mockPacer.disconnect()).thenAnswer((_) async {});
-    when(() => mockPacer.startRelayStreams()).thenAnswer((_) async {});
-    when(() => mockPacer.stopRelayStreams()).thenAnswer((_) async {});
+    when(() => mockPacer.startAccStreaming()).thenAnswer((_) async {});
+    when(() => mockPacer.startPpiStreaming()).thenAnswer((_) async {});
+    when(() => mockPacer.stopAccStreaming()).thenAnswer((_) async {});
+    when(() => mockPacer.stopPpiStreaming()).thenAnswer((_) async {});
     when(() => mockPacer.dispose()).thenAnswer((_) {});
 
     for (final relay in [mockHrRelay, mockAccRelay, mockPpiRelay]) {
@@ -97,6 +99,12 @@ void main() {
         pacerHrRelayPushServiceProvider.overrideWithValue(mockHrRelay),
         pacerAccRelayPushServiceProvider.overrideWithValue(mockAccRelay),
         pacerPpiRelayPushServiceProvider.overrideWithValue(mockPpiRelay),
+        pacerConnectRetryBaseDelayProvider.overrideWithValue(
+          const Duration(milliseconds: 10),
+        ),
+        pacerConnectRetryMaxDelayProvider.overrideWithValue(
+          const Duration(milliseconds: 20),
+        ),
       ],
     );
     addTearDown(c.dispose);
@@ -176,7 +184,8 @@ void main() {
     await c.read(pacerNotifierProvider.notifier).togglePacerRelay();
 
     expect(c.read(pacerNotifierProvider).pacerRelayActive, isTrue);
-    verify(() => mockPacer.startRelayStreams()).called(1);
+    verify(() => mockPacer.startAccStreaming()).called(1);
+    verify(() => mockPacer.startPpiStreaming()).called(1);
     verify(() => mockHrRelay.start(any())).called(1);
     verify(() => mockAccRelay.start(any())).called(1);
     verify(() => mockPpiRelay.start(any())).called(1);
@@ -190,7 +199,8 @@ void main() {
     await notifier.disconnect();
 
     expect(c.read(pacerNotifierProvider).pacerRelayActive, isFalse);
-    verify(() => mockPacer.stopRelayStreams()).called(1);
+    verify(() => mockPacer.stopAccStreaming()).called(1);
+    verify(() => mockPacer.stopPpiStreaming()).called(1);
     verify(() => mockPacer.disconnect()).called(1);
   });
 
@@ -200,14 +210,66 @@ void main() {
       final c = container();
       c.read(pacerNotifierProvider);
 
-      errorCtrl.add('PPI stream failed');
+      errorCtrl.add(
+        const PolarPacerError(
+          message: 'Connect timed out',
+          isConnectionError: true,
+        ),
+      );
       await Future<void>.delayed(Duration.zero);
       connCtrl.add(PolarConnectionState.error);
       await Future<void>.delayed(Duration.zero);
 
       final state = c.read(pacerNotifierProvider);
-      expect(state.lastError, 'PPI stream failed');
+      expect(state.lastError, 'Connect timed out');
       expect(state.connectionState, PolarConnectionState.error);
+    },
+  );
+
+  test('connectAndStartRelay retries connect after connection error', () async {
+    final c = container();
+    final notifier = c.read(pacerNotifierProvider.notifier);
+    c.read(pacerNotifierProvider);
+
+    await notifier.connectAndStartRelay();
+    verify(() => mockPacer.connect()).called(1);
+
+    errorCtrl.add(
+      const PolarPacerError(
+        message: 'Connect timed out',
+        isConnectionError: true,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    connCtrl.add(PolarConnectionState.error);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    verify(() => mockPacer.connect()).called(1);
+    expect(c.read(pacerNotifierProvider).lastError, contains('Retrying in'));
+  });
+
+  test(
+    'ACC stream failure keeps Pacer relay active when HR relay is healthy',
+    () async {
+      final c = container();
+      c.read(pacerNotifierProvider);
+
+      await c.read(pacerNotifierProvider.notifier).togglePacerRelay();
+      hrStatusCtrl.add(RelayPushStatus.ok);
+      await Future<void>.delayed(Duration.zero);
+
+      errorCtrl.add(
+        const PolarPacerError(message: 'ACC start failed', stream: 'acc'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final state = c.read(pacerNotifierProvider);
+      expect(state.pacerRelayActive, isTrue);
+      expect(state.hrRelayStatus, RelayPushStatus.ok);
+      expect(state.accRelayStatus, RelayPushStatus.error);
+      expect(state.pacerRelayStatus, RelayPushStatus.ok);
+      expect(state.lastError, 'ACC start failed');
+      verifyNever(() => mockAccRelay.stop());
     },
   );
 }

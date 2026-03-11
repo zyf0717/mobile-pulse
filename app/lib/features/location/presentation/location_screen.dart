@@ -526,55 +526,51 @@ class _LocationDisplay extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        padding: const EdgeInsets.all(_screenPadding),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: constraints.maxHeight - (_screenPadding * 2),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        _screenPadding,
+        8,
+        _screenPadding,
+        8,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Tile(
+            icon: Icons.location_on,
+            label: 'Latitude',
+            value: loc.latitude.toStringAsFixed(6),
           ),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _Tile(
-                  icon: Icons.location_on,
-                  label: 'Latitude',
-                  value: loc.latitude.toStringAsFixed(6),
-                ),
-                const SizedBox(height: _tileSpacing),
-                _Tile(
-                  icon: Icons.location_on_outlined,
-                  label: 'Longitude',
-                  value: loc.longitude.toStringAsFixed(6),
-                ),
-                const SizedBox(height: _tileSpacing),
-                _Tile(
-                  icon: Icons.speed,
-                  label: 'Speed',
-                  value: '${loc.speedKmh.toStringAsFixed(1)} km/h',
-                ),
-                const SizedBox(height: _tileSpacing),
-                _Tile(
-                  icon: Icons.terrain,
-                  label: 'Altitude',
-                  value: '${loc.altitude.toStringAsFixed(1)} m',
-                ),
-                const SizedBox(height: _tileSpacing),
-                _Tile(
-                  icon: Icons.gps_fixed,
-                  label: 'Accuracy',
-                  value: '±${loc.accuracy.toStringAsFixed(1)} m',
-                ),
-                const SizedBox(height: _sectionSpacing),
-                Text(
-                  'Updated ${TimeOfDay.fromDateTime(loc.timestamp).format(context)}',
-                  style: textTheme.bodySmall,
-                ),
-              ],
-            ),
+          const SizedBox(height: _tileSpacing),
+          _Tile(
+            icon: Icons.location_on_outlined,
+            label: 'Longitude',
+            value: loc.longitude.toStringAsFixed(6),
           ),
-        ),
+          const SizedBox(height: _tileSpacing),
+          _Tile(
+            icon: Icons.speed,
+            label: 'Speed',
+            value: '${loc.speedKmh.toStringAsFixed(1)} km/h',
+          ),
+          const SizedBox(height: _tileSpacing),
+          _Tile(
+            icon: Icons.terrain,
+            label: 'Altitude',
+            value: '${loc.altitude.toStringAsFixed(1)} m',
+          ),
+          const SizedBox(height: _tileSpacing),
+          _Tile(
+            icon: Icons.gps_fixed,
+            label: 'Accuracy',
+            value: '±${loc.accuracy.toStringAsFixed(1)} m',
+          ),
+          const SizedBox(height: _sectionSpacing),
+          Text(
+            'Updated ${TimeOfDay.fromDateTime(loc.timestamp).format(context)}',
+            style: textTheme.bodySmall,
+          ),
+        ],
       ),
     );
   }

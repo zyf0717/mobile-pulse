@@ -24,11 +24,12 @@ class PolarState {
   });
 
   /// Aggregate status for the UI chip.
-  /// error if any sub-relay errored; ok if all three confirmed ok;
-  /// idle otherwise (inactive or still initialising).
+  /// ok if any H10 sub-relay is healthy; error only when no sub-relay is ok
+  /// and at least one has errored; idle otherwise.
   RelayPushStatus get h10RelayStatus => aggregateRelayStatus(
     active: h10RelayActive,
     statuses: [hrRelayStatus, ecgRelayStatus, accRelayStatus],
+    allowPartialSuccess: true,
   );
 
   PolarState copyWith({

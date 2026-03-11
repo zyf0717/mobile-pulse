@@ -163,6 +163,43 @@ void main() {
     );
   });
 
+  group('partial H10 relay success', () {
+    test(
+      'aggregate relay status stays ok when one stream errors but another is ok',
+      () async {
+        final container = _container();
+        container.read(polarNotifierProvider.notifier).toggleH10Relay();
+
+        hrStatusCtrl.add(RelayPushStatus.ok);
+        ecgStatusCtrl.add(RelayPushStatus.error);
+        await Future<void>.delayed(Duration.zero);
+
+        final state = container.read(polarNotifierProvider);
+        expect(state.h10RelayActive, isTrue);
+        expect(state.hrRelayStatus, RelayPushStatus.ok);
+        expect(state.ecgRelayStatus, RelayPushStatus.error);
+        expect(state.h10RelayStatus, RelayPushStatus.ok);
+      },
+    );
+
+    test(
+      'aggregate relay status is error when no H10 stream is healthy',
+      () async {
+        final container = _container();
+        container.read(polarNotifierProvider.notifier).toggleH10Relay();
+
+        ecgStatusCtrl.add(RelayPushStatus.error);
+        accStatusCtrl.add(RelayPushStatus.idle);
+        hrStatusCtrl.add(RelayPushStatus.idle);
+        await Future<void>.delayed(Duration.zero);
+
+        final state = container.read(polarNotifierProvider);
+        expect(state.h10RelayActive, isTrue);
+        expect(state.h10RelayStatus, RelayPushStatus.error);
+      },
+    );
+  });
+
   group('disconnect()', () {
     test('stops all relays and delegates to h10.disconnect()', () async {
       final container = _container();
