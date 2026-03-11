@@ -6,7 +6,8 @@ import '../logic/relay_provider.dart';
 import '../models/location_data.dart';
 import '../../../services/relay_push_service.dart';
 import '../../../services/polar_h10_service.dart';
-import '../../hr/logic/polar_provider.dart';
+import '../../polar_h10/logic/polar_h10_provider.dart';
+import '../../polar_pacer/logic/polar_pacer_provider.dart';
 import '../../pulse/logic/pulse_provider.dart';
 
 class LocationScreen extends ConsumerWidget {
@@ -17,7 +18,6 @@ class LocationScreen extends ConsumerWidget {
     final locationAsync = ref.watch(locationStreamProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mobile Pulse')),
       body: Column(
         children: [
           Expanded(
@@ -64,15 +64,23 @@ class _BottomPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final relay = ref.watch(relayNotifierProvider);
     final pulse = ref.watch(pulseNotifierProvider);
-    final polar = ref.watch(polarNotifierProvider);
-    final pNotifier = ref.read(polarNotifierProvider.notifier);
+    final polar = ref.watch(polarH10NotifierProvider);
+    final pacer = ref.watch(polarPacerNotifierProvider);
+    final pNotifier = ref.read(polarH10NotifierProvider.notifier);
+    final pacerNotifier = ref.read(polarPacerNotifierProvider.notifier);
     final rNotifier = ref.read(relayNotifierProvider.notifier);
     final puNotifier = ref.read(pulseNotifierProvider.notifier);
 
-    final isConnected = polar.connectionState == PolarConnectionState.connected;
-    final isIdle =
+    final h10Connected =
+        polar.connectionState == PolarConnectionState.connected;
+    final h10Idle =
         polar.connectionState == PolarConnectionState.disconnected ||
         polar.connectionState == PolarConnectionState.error;
+    final pacerConnected =
+        pacer.connectionState == PolarConnectionState.connected;
+    final pacerIdle =
+        pacer.connectionState == PolarConnectionState.disconnected ||
+        pacer.connectionState == PolarConnectionState.error;
 
     return SafeArea(
       child: Column(
@@ -107,29 +115,12 @@ class _BottomPanel extends ConsumerWidget {
           const Divider(height: 1),
           _ControlRow(
             leading: _H10StatusChip(polar: polar),
-            trailing: SizedBox(
-              width: 120,
-              child: isIdle
-                  ? OutlinedButton(
-                      onPressed: pNotifier.connect,
-                      child: const Text('Connect'),
-                    )
-                  : isConnected
-                  ? OutlinedButton(
-                      onPressed: pNotifier.disconnect,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                      ),
-                      child: const Text('Disconnect'),
-                    )
-                  : const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
+            trailing: _DeviceConnectButton(
+              connectionState: polar.connectionState,
+              isIdle: h10Idle,
+              isConnected: h10Connected,
+              onConnect: pNotifier.connect,
+              onDisconnect: pNotifier.disconnect,
             ),
           ),
           _ControlRow(
@@ -142,7 +133,31 @@ class _BottomPanel extends ConsumerWidget {
             trailing: _RelayButton(
               active: polar.h10RelayActive,
               pushLabel: 'Push H10',
-              onToggle: isConnected ? pNotifier.toggleH10Relay : null,
+              onToggle: h10Connected ? pNotifier.toggleH10Relay : null,
+            ),
+          ),
+          const Divider(height: 1),
+          _ControlRow(
+            leading: _PacerStatusChip(pacer: pacer),
+            trailing: _DeviceConnectButton(
+              connectionState: pacer.connectionState,
+              isIdle: pacerIdle,
+              isConnected: pacerConnected,
+              onConnect: pacerNotifier.connect,
+              onDisconnect: pacerNotifier.disconnect,
+            ),
+          ),
+          _ControlRow(
+            leading: _StatusChip(
+              active: pacer.pacerRelayActive,
+              status: pacer.pacerRelayStatus,
+              offLabel: 'Pacer relay off',
+              okLabel: 'Pacer relay OK',
+            ),
+            trailing: _RelayButton(
+              active: pacer.pacerRelayActive,
+              pushLabel: 'Push Pacer',
+              onToggle: pacerConnected ? pacerNotifier.togglePacerRelay : null,
             ),
           ),
           const Divider(height: 1),
@@ -150,9 +165,11 @@ class _BottomPanel extends ConsumerWidget {
             relay: relay,
             pulse: pulse,
             polar: polar,
+            pacer: pacer,
             rNotifier: rNotifier,
             puNotifier: puNotifier,
             pNotifier: pNotifier,
+            pacerNotifier: pacerNotifier,
           ),
         ],
       ),
@@ -165,18 +182,22 @@ class _BottomPanel extends ConsumerWidget {
 class _StartStopAllButton extends StatelessWidget {
   final RelayState relay;
   final PulseState pulse;
-  final PolarState polar;
+  final PolarH10State polar;
+  final PolarPacerState pacer;
   final RelayNotifier rNotifier;
   final PulseNotifier puNotifier;
-  final PolarNotifier pNotifier;
+  final PolarH10Notifier pNotifier;
+  final PolarPacerNotifier pacerNotifier;
 
   const _StartStopAllButton({
     required this.relay,
     required this.pulse,
     required this.polar,
+    required this.pacer,
     required this.rNotifier,
     required this.puNotifier,
     required this.pNotifier,
+    required this.pacerNotifier,
   });
 
   bool get _anyActive =>
@@ -185,13 +206,17 @@ class _StartStopAllButton extends StatelessWidget {
       polar.h10RelayActive ||
       polar.connectionState == PolarConnectionState.connected ||
       polar.connectionState == PolarConnectionState.scanning ||
-      polar.connectionState == PolarConnectionState.connecting;
+      polar.connectionState == PolarConnectionState.connecting ||
+      pacer.pacerRelayActive ||
+      pacer.connectionState == PolarConnectionState.connected ||
+      pacer.connectionState == PolarConnectionState.scanning ||
+      pacer.connectionState == PolarConnectionState.connecting;
 
   @override
   Widget build(BuildContext context) {
     final stopping = _anyActive;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
       child: Center(
         child: FilledButton(
           onPressed: () {
@@ -199,10 +224,12 @@ class _StartStopAllButton extends StatelessWidget {
               rNotifier.stopIfActive();
               puNotifier.stopIfActive();
               pNotifier.stopAll();
+              pacerNotifier.stopAll();
             } else {
               rNotifier.startIfInactive();
               puNotifier.startIfInactive();
               pNotifier.connectAndStartRelay();
+              pacerNotifier.connectAndStartRelay();
             }
           },
           style: FilledButton.styleFrom(
@@ -226,7 +253,7 @@ class _ControlRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
       child: Row(
         children: [
           Expanded(child: leading),
@@ -292,10 +319,59 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+// ── Device connect button (shared) ────────────────────────────────────────────
+
+class _DeviceConnectButton extends StatelessWidget {
+  final PolarConnectionState connectionState;
+  final bool isIdle;
+  final bool isConnected;
+  final VoidCallback onConnect;
+  final Future<void> Function() onDisconnect;
+
+  const _DeviceConnectButton({
+    required this.connectionState,
+    required this.isIdle,
+    required this.isConnected,
+    required this.onConnect,
+    required this.onDisconnect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isIdle) {
+      return SizedBox(
+        width: 120,
+        child: OutlinedButton(
+          onPressed: onConnect,
+          child: const Text('Connect'),
+        ),
+      );
+    }
+    if (isConnected) {
+      return SizedBox(
+        width: 120,
+        child: OutlinedButton(
+          onPressed: onDisconnect,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red,
+            side: const BorderSide(color: Colors.red),
+          ),
+          child: const Text('Disconnect'),
+        ),
+      );
+    }
+    // scanning / connecting — disabled button with label
+    return SizedBox(
+      width: 120,
+      child: OutlinedButton(onPressed: null, child: const Text('Connecting…')),
+    );
+  }
+}
+
 // ── H10 status chip ───────────────────────────────────────────────────────────
 
 class _H10StatusChip extends StatelessWidget {
-  final PolarState polar;
+  final PolarH10State polar;
   const _H10StatusChip({required this.polar});
 
   @override
@@ -322,6 +398,60 @@ class _H10StatusChip extends StatelessWidget {
         polar.latestBpm != null
             ? 'H10 — ${polar.latestBpm} bpm'
             : 'H10 — waiting…',
+      ),
+      PolarConnectionState.error => (
+        Colors.red,
+        Icons.bluetooth_disabled,
+        'Not found / error',
+      ),
+    };
+
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Pacer status chip ─────────────────────────────────────────────────────────
+
+class _PacerStatusChip extends StatelessWidget {
+  final PolarPacerState pacer;
+  const _PacerStatusChip({required this.pacer});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon, label) = switch (pacer.connectionState) {
+      PolarConnectionState.disconnected => (
+        Colors.grey,
+        Icons.bluetooth_disabled,
+        'Polar Pacer',
+      ),
+      PolarConnectionState.scanning => (
+        Colors.orange,
+        Icons.bluetooth_searching,
+        'Scanning…',
+      ),
+      PolarConnectionState.connecting => (
+        Colors.blue,
+        Icons.bluetooth_connected,
+        'Connecting…',
+      ),
+      PolarConnectionState.connected => (
+        Colors.green,
+        Icons.bluetooth_connected,
+        pacer.latestBpm != null
+            ? 'Pacer — ${pacer.latestBpm} bpm'
+            : 'Pacer — waiting…',
       ),
       PolarConnectionState.error => (
         Colors.red,

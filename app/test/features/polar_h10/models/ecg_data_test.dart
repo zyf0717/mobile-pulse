@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mobile_pulse/features/hr/models/ecg_data.dart';
+import 'package:mobile_pulse/features/polar_h10/models/ecg_data.dart';
 
 void main() {
   final ts = DateTime.utc(2026, 3, 10, 12, 0, 0);

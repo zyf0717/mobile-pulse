@@ -4,39 +4,38 @@ import 'package:polar/polar.dart';
 
 import '../features/polar/models/acc_data.dart';
 import '../features/polar/models/hr_data.dart';
-import '../features/polar_h10/models/ecg_data.dart';
+import '../features/polar_pacer/models/ppi_data.dart';
 import 'polar_connection_state.dart';
 
-export 'polar_connection_state.dart';
-
-class PolarH10Service {
-  /// The 8-character Polar device ID (e.g. "6FFF5628").
+class PolarPacerService {
+  /// The 8-character Polar device ID. Defaults to the Polar Pacer DA2E2324;
+  /// override via the POLAR_PACER_DEVICE_ID dart-define or constructor arg.
   final String deviceId;
 
-  PolarH10Service({required this.deviceId});
+  PolarPacerService({this.deviceId = 'DA2E2324'});
 
-  // Shared singleton — safe to use from multiple service instances.
+  // Shared singleton with PolarH10Service.
   static final _polar = Polar();
 
   final _connectionController =
       StreamController<PolarConnectionState>.broadcast();
   final _hrController = StreamController<HrData>.broadcast();
-  final _ecgController = StreamController<EcgData>.broadcast();
   final _accController = StreamController<AccData>.broadcast();
+  final _ppiController = StreamController<PpiData>.broadcast();
 
   StreamSubscription<PolarDeviceInfo>? _connectingSub;
   StreamSubscription<PolarDeviceInfo>? _connectedSub;
   StreamSubscription<PolarDeviceDisconnectedEvent>? _disconnectedSub;
   StreamSubscription<PolarSdkFeatureReadyEvent>? _featureReadySub;
   StreamSubscription<PolarHrData>? _hrSub;
-  StreamSubscription<PolarEcgData>? _ecgSub;
   StreamSubscription<PolarAccData>? _accSub;
+  StreamSubscription<PolarPpiData>? _ppiSub;
 
   Stream<PolarConnectionState> get connectionState =>
       _connectionController.stream;
   Stream<HrData> get hrStream => _hrController.stream;
-  Stream<EcgData> get ecgStream => _ecgController.stream;
   Stream<AccData> get accStream => _accController.stream;
+  Stream<PpiData> get ppiStream => _ppiController.stream;
 
   Future<void> connect() async {
     if (_connectionController.isClosed) return;
@@ -60,18 +59,18 @@ class PolarH10Service {
           if (!_connectionController.isClosed) {
             _connectionController.add(PolarConnectionState.connected);
           }
-          // Start HR immediately — it uses the standard BLE Heart Rate service.
-          _startHrStreaming();
+          // HR and PPI use fixed BLE services — start immediately on connect.
+          _startHrAndPpiStreaming();
         });
 
-    // ECG and ACC (PMD streams) require onlineStreaming feature to be ready.
+    // ACC (PMD stream) requires onlineStreaming feature to be ready.
     _featureReadySub = _polar.sdkFeatureReady
         .where(
           (e) =>
               _matchId(e.identifier) &&
               e.feature == PolarSdkFeature.onlineStreaming,
         )
-        .listen((_) => _startPmdStreaming());
+        .listen((_) => _startAccStreaming());
 
     _disconnectedSub = _polar.deviceDisconnected
         .where((e) => _matchId(e.info.deviceId))
@@ -91,7 +90,7 @@ class PolarH10Service {
     }
   }
 
-  void _startHrStreaming() {
+  Future<void> _startHrAndPpiStreaming() async {
     _hrSub = _polar.startHrStreaming(deviceId).listen((data) {
       for (final s in data.samples) {
         if (!_hrController.isClosed) {
@@ -101,21 +100,31 @@ class PolarH10Service {
         }
       }
     }, onError: (_) {});
+
+    // PPI requires no settings — streams at the device's natural optical rate.
+    _ppiSub = _polar.startPpiStreaming(deviceId).listen((data) {
+      if (data.samples.isEmpty || _ppiController.isClosed) return;
+      _ppiController.add(
+        PpiData(
+          samples: data.samples
+              .map(
+                (s) => PpiSample(
+                  ppMs: s.ppi,
+                  errorEstimateMs: s.errorEstimate,
+                  hr: s.hr,
+                  blockerBit: s.blockerBit,
+                  skinContactStatus: s.skinContactStatus,
+                  skinContactSupported: s.skinContactSupported,
+                ),
+              )
+              .toList(),
+          timestamp: DateTime.now(),
+        ),
+      );
+    }, onError: (_) {});
   }
 
-  Future<void> _startPmdStreaming() async {
-    try {
-      _ecgSub = _polar.startEcgStreaming(deviceId).listen((data) {
-        if (data.samples.isEmpty || _ecgController.isClosed) return;
-        _ecgController.add(
-          EcgData(
-            samples: data.samples.map((s) => s.voltage).toList(),
-            timestamp: data.samples.first.timeStamp,
-          ),
-        );
-      }, onError: (_) {});
-    } catch (_) {}
-
+  Future<void> _startAccStreaming() async {
     try {
       _accSub = _polar.startAccStreaming(deviceId).listen((data) {
         if (data.samples.isEmpty || _accController.isClosed) return;
@@ -154,15 +163,15 @@ class PolarH10Service {
     _featureReadySub?.cancel();
     _connectionController.close();
     _hrController.close();
-    _ecgController.close();
     _accController.close();
+    _ppiController.close();
   }
 
   void _cancelStreamSubs() {
     _hrSub?.cancel();
-    _ecgSub?.cancel();
     _accSub?.cancel();
-    _hrSub = _ecgSub = _accSub = null;
+    _ppiSub?.cancel();
+    _hrSub = _accSub = _ppiSub = null;
   }
 
   bool _matchId(String id) => id.toUpperCase() == deviceId.toUpperCase();

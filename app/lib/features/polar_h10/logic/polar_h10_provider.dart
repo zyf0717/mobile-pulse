@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/polar_h10_service.dart';
 import '../../../services/relay_push_service.dart';
 
-class PolarState {
+class PolarH10State {
   final PolarConnectionState connectionState;
   final int? latestBpm;
   final bool h10RelayActive;
@@ -11,7 +11,7 @@ class PolarState {
   final RelayPushStatus ecgRelayStatus;
   final RelayPushStatus accRelayStatus;
 
-  const PolarState({
+  const PolarH10State({
     this.connectionState = PolarConnectionState.disconnected,
     this.latestBpm,
     this.h10RelayActive = false,
@@ -38,7 +38,7 @@ class PolarState {
     return RelayPushStatus.idle;
   }
 
-  PolarState copyWith({
+  PolarH10State copyWith({
     PolarConnectionState? connectionState,
     int? latestBpm,
     bool? latestBpmSet,
@@ -46,7 +46,7 @@ class PolarState {
     RelayPushStatus? hrRelayStatus,
     RelayPushStatus? ecgRelayStatus,
     RelayPushStatus? accRelayStatus,
-  }) => PolarState(
+  }) => PolarH10State(
     connectionState: connectionState ?? this.connectionState,
     latestBpm: latestBpmSet == true ? null : (latestBpm ?? this.latestBpm),
     h10RelayActive: h10RelayActive ?? this.h10RelayActive,
@@ -56,15 +56,15 @@ class PolarState {
   );
 }
 
-class PolarNotifier extends Notifier<PolarState> {
+class PolarH10Notifier extends Notifier<PolarH10State> {
   bool _startAllPending = false;
 
   @override
-  PolarState build() {
+  PolarH10State build() {
     final h10 = ref.watch(polarH10ServiceProvider);
-    final hrRelay = ref.watch(hrRelayPushServiceProvider);
-    final ecgRelay = ref.watch(ecgRelayPushServiceProvider);
-    final accRelay = ref.watch(accRelayPushServiceProvider);
+    final hrRelay = ref.watch(h10HrRelayPushServiceProvider);
+    final ecgRelay = ref.watch(h10EcgRelayPushServiceProvider);
+    final accRelay = ref.watch(h10AccRelayPushServiceProvider);
 
     final connSub = h10.connectionState.listen((s) {
       if (s == PolarConnectionState.disconnected ||
@@ -115,7 +115,7 @@ class PolarNotifier extends Notifier<PolarState> {
       accRelay.dispose();
     });
 
-    return const PolarState();
+    return const PolarH10State();
   }
 
   Future<void> connect() => ref.read(polarH10ServiceProvider).connect();
@@ -137,9 +137,9 @@ class PolarNotifier extends Notifier<PolarState> {
   }
 
   void _startH10Relay() {
-    final hrRelay = ref.read(hrRelayPushServiceProvider);
-    final ecgRelay = ref.read(ecgRelayPushServiceProvider);
-    final accRelay = ref.read(accRelayPushServiceProvider);
+    final hrRelay = ref.read(h10HrRelayPushServiceProvider);
+    final ecgRelay = ref.read(h10EcgRelayPushServiceProvider);
+    final accRelay = ref.read(h10AccRelayPushServiceProvider);
     final h10 = ref.read(polarH10ServiceProvider);
     hrRelay.start(h10.hrStream.map((hr) => hr.toJson()));
     ecgRelay.start(h10.ecgStream.map((ecg) => ecg.toJson()));
@@ -148,9 +148,9 @@ class PolarNotifier extends Notifier<PolarState> {
   }
 
   Future<void> disconnect() async {
-    ref.read(hrRelayPushServiceProvider).stop();
-    ref.read(ecgRelayPushServiceProvider).stop();
-    ref.read(accRelayPushServiceProvider).stop();
+    ref.read(h10HrRelayPushServiceProvider).stop();
+    ref.read(h10EcgRelayPushServiceProvider).stop();
+    ref.read(h10AccRelayPushServiceProvider).stop();
     state = state.copyWith(
       h10RelayActive: false,
       hrRelayStatus: RelayPushStatus.idle,
@@ -162,9 +162,9 @@ class PolarNotifier extends Notifier<PolarState> {
 
   void toggleH10Relay() {
     if (state.h10RelayActive) {
-      final hrRelay = ref.read(hrRelayPushServiceProvider);
-      final ecgRelay = ref.read(ecgRelayPushServiceProvider);
-      final accRelay = ref.read(accRelayPushServiceProvider);
+      final hrRelay = ref.read(h10HrRelayPushServiceProvider);
+      final ecgRelay = ref.read(h10EcgRelayPushServiceProvider);
+      final accRelay = ref.read(h10AccRelayPushServiceProvider);
       hrRelay.stop();
       ecgRelay.stop();
       accRelay.stop();
@@ -181,25 +181,24 @@ class PolarNotifier extends Notifier<PolarState> {
 }
 
 final polarH10ServiceProvider = Provider<PolarH10Service>((ref) {
-  const deviceId = String.fromEnvironment('POLAR_DEVICE_ID');
+  const deviceId = String.fromEnvironment('POLAR_H10_DEVICE_ID');
   return PolarH10Service(deviceId: deviceId);
 });
 
-final hrRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_HR_URL');
+final h10HrRelayPushServiceProvider = Provider<RelayPushService>((ref) {
+  const url = String.fromEnvironment('RELAY_H10_HR_URL');
   return RelayPushService(relayUrl: url);
 });
 
-final ecgRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_ECG_URL');
+final h10EcgRelayPushServiceProvider = Provider<RelayPushService>((ref) {
+  const url = String.fromEnvironment('RELAY_H10_ECG_URL');
   return RelayPushService(relayUrl: url);
 });
 
-final accRelayPushServiceProvider = Provider<RelayPushService>((ref) {
-  const url = String.fromEnvironment('RELAY_ACC_URL');
+final h10AccRelayPushServiceProvider = Provider<RelayPushService>((ref) {
+  const url = String.fromEnvironment('RELAY_H10_ACC_URL');
   return RelayPushService(relayUrl: url);
 });
 
-final polarNotifierProvider = NotifierProvider<PolarNotifier, PolarState>(
-  PolarNotifier.new,
-);
+final polarH10NotifierProvider =
+    NotifierProvider<PolarH10Notifier, PolarH10State>(PolarH10Notifier.new);

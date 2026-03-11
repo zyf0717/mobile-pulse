@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'features/hr/logic/polar_provider.dart';
+import 'features/polar_h10/logic/polar_h10_provider.dart';
+import 'features/polar_pacer/logic/polar_pacer_provider.dart';
 import 'features/location/logic/relay_provider.dart';
 import 'features/location/presentation/location_screen.dart';
 import 'features/pulse/logic/pulse_provider.dart';
-import 'services/polar_h10_service.dart';
+import 'services/polar_connection_state.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,16 +76,22 @@ class _MobilePulseAppState extends ConsumerState<MobilePulseApp>
   _SuspendedSession _captureSession() {
     final relay = ref.read(relayNotifierProvider);
     final pulse = ref.read(pulseNotifierProvider);
-    final polar = ref.read(polarNotifierProvider);
+    final h10 = ref.read(polarH10NotifierProvider);
+    final pacer = ref.read(polarPacerNotifierProvider);
 
     return _SuspendedSession(
       gpsRelayActive: relay.active,
       pulseRelayActive: pulse.active,
       h10ShouldReconnect:
-          polar.connectionState == PolarConnectionState.connected ||
-          polar.connectionState == PolarConnectionState.connecting ||
-          polar.connectionState == PolarConnectionState.scanning,
-      h10RelayActive: polar.h10RelayActive,
+          h10.connectionState == PolarConnectionState.connected ||
+          h10.connectionState == PolarConnectionState.connecting ||
+          h10.connectionState == PolarConnectionState.scanning,
+      h10RelayActive: h10.h10RelayActive,
+      pacerShouldReconnect:
+          pacer.connectionState == PolarConnectionState.connected ||
+          pacer.connectionState == PolarConnectionState.connecting ||
+          pacer.connectionState == PolarConnectionState.scanning,
+      pacerRelayActive: pacer.pacerRelayActive,
     );
   }
 
@@ -96,18 +103,24 @@ class _MobilePulseAppState extends ConsumerState<MobilePulseApp>
       ref.read(pulseNotifierProvider.notifier).startIfInactive();
     }
     if (session.h10RelayActive) {
-      await ref.read(polarNotifierProvider.notifier).connectAndStartRelay();
-      return;
+      await ref.read(polarH10NotifierProvider.notifier).connectAndStartRelay();
+    } else if (session.h10ShouldReconnect) {
+      await ref.read(polarH10NotifierProvider.notifier).connect();
     }
-    if (session.h10ShouldReconnect) {
-      await ref.read(polarNotifierProvider.notifier).connect();
+    if (session.pacerRelayActive) {
+      await ref
+          .read(polarPacerNotifierProvider.notifier)
+          .connectAndStartRelay();
+    } else if (session.pacerShouldReconnect) {
+      await ref.read(polarPacerNotifierProvider.notifier).connect();
     }
   }
 
   Future<void> _stopAndResetSession() async {
     ref.read(relayNotifierProvider.notifier).stopIfActive();
     ref.read(pulseNotifierProvider.notifier).stopIfActive();
-    await ref.read(polarNotifierProvider.notifier).stopAll();
+    await ref.read(polarH10NotifierProvider.notifier).stopAll();
+    await ref.read(polarPacerNotifierProvider.notifier).stopAll();
   }
 
   @override
@@ -125,11 +138,15 @@ class _SuspendedSession {
   final bool pulseRelayActive;
   final bool h10ShouldReconnect;
   final bool h10RelayActive;
+  final bool pacerShouldReconnect;
+  final bool pacerRelayActive;
 
   const _SuspendedSession({
     required this.gpsRelayActive,
     required this.pulseRelayActive,
     required this.h10ShouldReconnect,
     required this.h10RelayActive,
+    required this.pacerShouldReconnect,
+    required this.pacerRelayActive,
   });
 }

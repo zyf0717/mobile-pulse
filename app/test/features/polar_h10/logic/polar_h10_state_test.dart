@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mobile_pulse/features/hr/logic/polar_provider.dart';
-import 'package:mobile_pulse/services/polar_h10_service.dart';
+import 'package:mobile_pulse/features/polar_h10/logic/polar_h10_provider.dart';
+import 'package:mobile_pulse/services/polar_connection_state.dart';
 import 'package:mobile_pulse/services/relay_push_service.dart';
 
 void main() {
-  group('PolarState defaults', () {
+  group('PolarH10State defaults', () {
     test('initial state is fully idle / disconnected', () {
-      const s = PolarState();
+      const s = PolarH10State();
       expect(s.connectionState, PolarConnectionState.disconnected);
       expect(s.latestBpm, isNull);
       expect(s.h10RelayActive, isFalse);
@@ -18,9 +18,9 @@ void main() {
     });
   });
 
-  group('PolarState.copyWith', () {
+  group('PolarH10State.copyWith', () {
     test('updates supplied fields and leaves others unchanged', () {
-      const base = PolarState();
+      const base = PolarH10State();
       final next = base.copyWith(
         connectionState: PolarConnectionState.connected,
         latestBpm: 72,
@@ -38,27 +38,27 @@ void main() {
     });
 
     test('latestBpmSet: true clears latestBpm to null', () {
-      const base = PolarState(latestBpm: 75);
+      const base = PolarH10State(latestBpm: 75);
       final next = base.copyWith(latestBpmSet: true);
       expect(next.latestBpm, isNull);
     });
 
     test('latestBpm in copyWith overrides previously stored value', () {
-      const base = PolarState(latestBpm: 60);
+      const base = PolarH10State(latestBpm: 60);
       final next = base.copyWith(latestBpm: 90);
       expect(next.latestBpm, 90);
     });
 
     test('omitting latestBpm preserves original value', () {
-      const base = PolarState(latestBpm: 80);
+      const base = PolarH10State(latestBpm: 80);
       final next = base.copyWith(h10RelayActive: true);
       expect(next.latestBpm, 80);
     });
   });
 
-  group('PolarState.h10RelayStatus (computed)', () {
+  group('PolarH10State.h10RelayStatus (computed)', () {
     test('idle when h10RelayActive is false regardless of sub-statuses', () {
-      final s = const PolarState().copyWith(
+      final s = const PolarH10State().copyWith(
         hrRelayStatus: RelayPushStatus.ok,
         ecgRelayStatus: RelayPushStatus.ok,
         accRelayStatus: RelayPushStatus.ok,
@@ -67,7 +67,7 @@ void main() {
     });
 
     test('ok when active and all three sub-relays report ok', () {
-      final s = const PolarState().copyWith(
+      final s = const PolarH10State().copyWith(
         h10RelayActive: true,
         hrRelayStatus: RelayPushStatus.ok,
         ecgRelayStatus: RelayPushStatus.ok,
@@ -77,7 +77,7 @@ void main() {
     });
 
     test('error when active and any sub-relay reports error', () {
-      final s = const PolarState().copyWith(
+      final s = const PolarH10State().copyWith(
         h10RelayActive: true,
         hrRelayStatus: RelayPushStatus.ok,
         ecgRelayStatus: RelayPushStatus.error,
@@ -89,7 +89,7 @@ void main() {
     test(
       'idle (initialising) when active but not all sub-relays confirmed ok',
       () {
-        final s = const PolarState().copyWith(
+        final s = const PolarH10State().copyWith(
           h10RelayActive: true,
           hrRelayStatus: RelayPushStatus.ok,
           ecgRelayStatus: RelayPushStatus.idle,
