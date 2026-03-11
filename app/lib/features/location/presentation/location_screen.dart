@@ -4,10 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../logic/location_provider.dart';
 import '../logic/relay_provider.dart';
 import '../models/location_data.dart';
-import '../../../services/relay_push_service.dart';
-import '../../../services/polar_h10_service.dart';
 import '../../pulse/logic/pulse_provider.dart';
+import '../../polar/common/models/polar_connection_state.dart';
 import '../../polar/h10/logic/polar_provider.dart';
+import '../../polar/pacer/logic/pacer_provider.dart';
+import '../../../services/relay_push_service.dart';
 
 const double _controlButtonWidth = 152;
 
@@ -66,15 +67,22 @@ class _BottomPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final relay = ref.watch(relayNotifierProvider);
     final pulse = ref.watch(pulseNotifierProvider);
-    final polar = ref.watch(polarNotifierProvider);
-    final pNotifier = ref.read(polarNotifierProvider.notifier);
+    final h10 = ref.watch(polarNotifierProvider);
+    final pacer = ref.watch(pacerNotifierProvider);
+    final h10Notifier = ref.read(polarNotifierProvider.notifier);
+    final pacerNotifier = ref.read(pacerNotifierProvider.notifier);
     final rNotifier = ref.read(relayNotifierProvider.notifier);
     final puNotifier = ref.read(pulseNotifierProvider.notifier);
 
-    final isConnected = polar.connectionState == PolarConnectionState.connected;
-    final isIdle =
-        polar.connectionState == PolarConnectionState.disconnected ||
-        polar.connectionState == PolarConnectionState.error;
+    final h10Connected = h10.connectionState == PolarConnectionState.connected;
+    final h10Idle =
+        h10.connectionState == PolarConnectionState.disconnected ||
+        h10.connectionState == PolarConnectionState.error;
+    final pacerConnected =
+        pacer.connectionState == PolarConnectionState.connected;
+    final pacerIdle =
+        pacer.connectionState == PolarConnectionState.disconnected ||
+        pacer.connectionState == PolarConnectionState.error;
 
     return SafeArea(
       child: Column(
@@ -108,17 +116,17 @@ class _BottomPanel extends ConsumerWidget {
           ),
           const Divider(height: 1),
           _ControlRow(
-            leading: _H10StatusChip(polar: polar),
+            leading: _H10StatusChip(polar: h10),
             trailing: SizedBox(
               width: _controlButtonWidth,
-              child: isIdle
+              child: h10Idle
                   ? OutlinedButton(
-                      onPressed: pNotifier.connect,
+                      onPressed: h10Notifier.connect,
                       child: const Text('Connect'),
                     )
-                  : isConnected
+                  : h10Connected
                   ? OutlinedButton(
-                      onPressed: pNotifier.disconnect,
+                      onPressed: h10Notifier.disconnect,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.red,
                         side: const BorderSide(color: Colors.red),
@@ -137,25 +145,74 @@ class _BottomPanel extends ConsumerWidget {
           ),
           _ControlRow(
             leading: _StatusChip(
-              active: polar.h10RelayActive,
-              status: polar.h10RelayStatus,
+              active: h10.h10RelayActive,
+              status: h10.h10RelayStatus,
               offLabel: 'H10 relay off',
               okLabel: 'H10 relay OK',
             ),
             trailing: _RelayButton(
-              active: polar.h10RelayActive,
+              active: h10.h10RelayActive,
               pushLabel: 'Push H10',
-              onToggle: isConnected ? pNotifier.toggleH10Relay : null,
+              onToggle: h10Connected ? h10Notifier.toggleH10Relay : null,
+            ),
+          ),
+          const Divider(height: 1),
+          _ControlRow(
+            leading: _PacerStatusChip(pacer: pacer),
+            trailing: SizedBox(
+              width: _controlButtonWidth,
+              child: !pacer.isConfigured
+                  ? const OutlinedButton(
+                      onPressed: null,
+                      child: Text('No ID', maxLines: 1, softWrap: false),
+                    )
+                  : pacerIdle
+                  ? OutlinedButton(
+                      onPressed: pacerNotifier.connect,
+                      child: const Text('Connect'),
+                    )
+                  : pacerConnected
+                  ? OutlinedButton(
+                      onPressed: pacerNotifier.disconnect,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                      child: const Text('Disconnect'),
+                    )
+                  : OutlinedButton(
+                      onPressed: null,
+                      child: const Text(
+                        'Connecting...',
+                        maxLines: 1,
+                        softWrap: false,
+                      ),
+                    ),
+            ),
+          ),
+          _ControlRow(
+            leading: _StatusChip(
+              active: pacer.pacerRelayActive,
+              status: pacer.pacerRelayStatus,
+              offLabel: 'Pacer relay off',
+              okLabel: 'Pacer relay OK',
+            ),
+            trailing: _RelayButton(
+              active: pacer.pacerRelayActive,
+              pushLabel: 'Push Pacer',
+              onToggle: pacerConnected ? pacerNotifier.togglePacerRelay : null,
             ),
           ),
           const Divider(height: 1),
           _StartStopAllButton(
             relay: relay,
             pulse: pulse,
-            polar: polar,
+            h10: h10,
+            pacer: pacer,
             rNotifier: rNotifier,
             puNotifier: puNotifier,
-            pNotifier: pNotifier,
+            h10Notifier: h10Notifier,
+            pacerNotifier: pacerNotifier,
           ),
         ],
       ),
@@ -168,27 +225,35 @@ class _BottomPanel extends ConsumerWidget {
 class _StartStopAllButton extends StatelessWidget {
   final RelayState relay;
   final PulseState pulse;
-  final PolarState polar;
+  final PolarState h10;
+  final PacerState pacer;
   final RelayNotifier rNotifier;
   final PulseNotifier puNotifier;
-  final PolarNotifier pNotifier;
+  final PolarNotifier h10Notifier;
+  final PacerNotifier pacerNotifier;
 
   const _StartStopAllButton({
     required this.relay,
     required this.pulse,
-    required this.polar,
+    required this.h10,
+    required this.pacer,
     required this.rNotifier,
     required this.puNotifier,
-    required this.pNotifier,
+    required this.h10Notifier,
+    required this.pacerNotifier,
   });
 
   bool get _anyActive =>
       relay.active ||
       pulse.active ||
-      polar.h10RelayActive ||
-      polar.connectionState == PolarConnectionState.connected ||
-      polar.connectionState == PolarConnectionState.scanning ||
-      polar.connectionState == PolarConnectionState.connecting;
+      h10.h10RelayActive ||
+      h10.connectionState == PolarConnectionState.connected ||
+      h10.connectionState == PolarConnectionState.scanning ||
+      h10.connectionState == PolarConnectionState.connecting ||
+      pacer.pacerRelayActive ||
+      pacer.connectionState == PolarConnectionState.connected ||
+      pacer.connectionState == PolarConnectionState.scanning ||
+      pacer.connectionState == PolarConnectionState.connecting;
 
   @override
   Widget build(BuildContext context) {
@@ -201,11 +266,13 @@ class _StartStopAllButton extends StatelessWidget {
             if (stopping) {
               rNotifier.stopIfActive();
               puNotifier.stopIfActive();
-              pNotifier.stopAll();
+              h10Notifier.stopAll();
+              pacerNotifier.stopAll();
             } else {
               rNotifier.startIfInactive();
               puNotifier.startIfInactive();
-              pNotifier.connectAndStartRelay();
+              h10Notifier.connectAndStartRelay();
+              pacerNotifier.connectAndStartRelay();
             }
           },
           style: FilledButton.styleFrom(
@@ -330,6 +397,58 @@ class _H10StatusChip extends StatelessWidget {
         Colors.red,
         Icons.bluetooth_disabled,
         'Not found / error',
+      ),
+    };
+
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PacerStatusChip extends StatelessWidget {
+  final PacerState pacer;
+  const _PacerStatusChip({required this.pacer});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon, label) = switch (pacer.connectionState) {
+      PolarConnectionState.disconnected => (
+        Colors.grey,
+        Icons.watch_outlined,
+        'Polar Pacer',
+      ),
+      PolarConnectionState.scanning => (
+        Colors.orange,
+        Icons.bluetooth_searching,
+        'Scanning…',
+      ),
+      PolarConnectionState.connecting => (
+        Colors.blue,
+        Icons.watch,
+        'Connecting…',
+      ),
+      PolarConnectionState.connected => (
+        Colors.green,
+        Icons.watch,
+        pacer.latestBpm != null
+            ? 'Pacer — ${pacer.latestBpm} bpm'
+            : 'Pacer — waiting…',
+      ),
+      PolarConnectionState.error => (
+        Colors.red,
+        Icons.watch_off,
+        'Pacer error',
       ),
     };
 

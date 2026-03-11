@@ -14,6 +14,8 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "com.example.mobile_pulse/device_metrics"
     }
 
+    private var polarPacerChannelHandler: PolarPacerChannelHandler? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -23,6 +25,16 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        polarPacerChannelHandler = PolarPacerChannelHandler(
+            context = applicationContext,
+            messenger = flutterEngine.dartExecutor.binaryMessenger,
+        )
+    }
+
+    override fun onDestroy() {
+        polarPacerChannelHandler?.dispose()
+        polarPacerChannelHandler = null
+        super.onDestroy()
     }
 
     private fun buildSnapshot(): Map<String, Any?> {

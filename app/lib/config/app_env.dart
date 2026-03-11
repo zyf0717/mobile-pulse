@@ -5,6 +5,10 @@ class AppEnvKeys {
   static const relayH10EcgUrl = 'RELAY_H10_ECG_URL';
   static const relayH10AccUrl = 'RELAY_H10_ACC_URL';
   static const polarH10DeviceId = 'POLAR_H10_DEVICE_ID';
+  static const relayPacerHrUrl = 'RELAY_PACER_HR_URL';
+  static const relayPacerAccUrl = 'RELAY_PACER_ACC_URL';
+  static const relayPacerPpiUrl = 'RELAY_PACER_PPI_URL';
+  static const polarPacerDeviceId = 'POLAR_PACER_DEVICE_ID';
 }
 
 class AppEnv {
@@ -19,5 +23,17 @@ class AppEnv {
   );
   static const polarH10DeviceId = String.fromEnvironment(
     AppEnvKeys.polarH10DeviceId,
+  );
+  static const relayPacerHrUrl = String.fromEnvironment(
+    AppEnvKeys.relayPacerHrUrl,
+  );
+  static const relayPacerAccUrl = String.fromEnvironment(
+    AppEnvKeys.relayPacerAccUrl,
+  );
+  static const relayPacerPpiUrl = String.fromEnvironment(
+    AppEnvKeys.relayPacerPpiUrl,
+  );
+  static const polarPacerDeviceId = String.fromEnvironment(
+    AppEnvKeys.polarPacerDeviceId,
   );
 }

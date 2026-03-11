@@ -4,17 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../features/polar/h10/models/acc_data.dart';
+import '../features/polar/common/models/acc_data.dart';
+import '../features/polar/common/models/hr_data.dart';
+import '../features/polar/common/models/polar_connection_state.dart';
 import '../features/polar/h10/models/ecg_data.dart';
-import '../features/polar/h10/models/hr_data.dart';
-
-enum PolarConnectionState {
-  disconnected,
-  scanning,
-  connecting,
-  connected,
-  error,
-}
 
 class PolarH10Service {
   // ── Standard BT Heart Rate service ──────────────────────────────────────
@@ -328,7 +321,11 @@ class PolarH10Service {
       default:
         return null;
     }
-    return AccData(samples: samples, timestamp: DateTime.now());
+    return AccData(
+      samples: samples,
+      sampleRateHz: 200,
+      timestamp: DateTime.now(),
+    );
   }
 
   static int _s8(int v) => v >= 0x80 ? v - 0x100 : v;

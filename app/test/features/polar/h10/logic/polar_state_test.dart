@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:mobile_pulse/features/polar/common/models/polar_connection_state.dart';
 import 'package:mobile_pulse/features/polar/h10/logic/polar_provider.dart';
-import 'package:mobile_pulse/services/polar_h10_service.dart';
 import 'package:mobile_pulse/services/relay_push_service.dart';
 
 void main() {

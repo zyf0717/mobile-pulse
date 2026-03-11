@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/app_env.dart';
+import '../../common/logic/polar_relay_status.dart';
+import '../../common/models/polar_connection_state.dart';
 import '../../../../services/polar_h10_service.dart';
 import '../../../../services/relay_push_service.dart';
 
@@ -24,20 +26,10 @@ class PolarState {
   /// Aggregate status for the UI chip.
   /// error if any sub-relay errored; ok if all three confirmed ok;
   /// idle otherwise (inactive or still initialising).
-  RelayPushStatus get h10RelayStatus {
-    if (!h10RelayActive) return RelayPushStatus.idle;
-    if (hrRelayStatus == RelayPushStatus.error ||
-        ecgRelayStatus == RelayPushStatus.error ||
-        accRelayStatus == RelayPushStatus.error) {
-      return RelayPushStatus.error;
-    }
-    if (hrRelayStatus == RelayPushStatus.ok &&
-        ecgRelayStatus == RelayPushStatus.ok &&
-        accRelayStatus == RelayPushStatus.ok) {
-      return RelayPushStatus.ok;
-    }
-    return RelayPushStatus.idle;
-  }
+  RelayPushStatus get h10RelayStatus => aggregateRelayStatus(
+    active: h10RelayActive,
+    statuses: [hrRelayStatus, ecgRelayStatus, accRelayStatus],
+  );
 
   PolarState copyWith({
     PolarConnectionState? connectionState,
