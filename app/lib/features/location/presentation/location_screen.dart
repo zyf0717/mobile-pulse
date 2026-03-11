@@ -15,6 +15,8 @@ const double _screenPadding = 16;
 const double _controlRowVerticalPadding = 6;
 const double _sectionSpacing = 12;
 const double _tileSpacing = 12;
+const int _gpsPanelFlex = 3;
+const int _controlsPanelFlex = 4;
 
 class LocationScreen extends ConsumerWidget {
   const LocationScreen({super.key});
@@ -28,6 +30,7 @@ class LocationScreen extends ConsumerWidget {
       body: Column(
         children: [
           Expanded(
+            flex: _gpsPanelFlex,
             child: locationAsync.when(
               data: (loc) => _LocationDisplay(loc: loc),
               loading: () => const Center(
@@ -55,7 +58,7 @@ class LocationScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
-          const Flexible(fit: FlexFit.loose, child: _BottomPanel()),
+          const Expanded(flex: _controlsPanelFlex, child: _BottomPanel()),
         ],
       ),
     );
@@ -527,12 +530,7 @@ class _LocationDisplay extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        _screenPadding,
-        8,
-        _screenPadding,
-        8,
-      ),
+      padding: const EdgeInsets.fromLTRB(_screenPadding, 8, _screenPadding, 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

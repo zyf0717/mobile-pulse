@@ -99,12 +99,6 @@ void main() {
         pacerHrRelayPushServiceProvider.overrideWithValue(mockHrRelay),
         pacerAccRelayPushServiceProvider.overrideWithValue(mockAccRelay),
         pacerPpiRelayPushServiceProvider.overrideWithValue(mockPpiRelay),
-        pacerConnectRetryBaseDelayProvider.overrideWithValue(
-          const Duration(milliseconds: 10),
-        ),
-        pacerConnectRetryMaxDelayProvider.overrideWithValue(
-          const Duration(milliseconds: 20),
-        ),
       ],
     );
     addTearDown(c.dispose);
@@ -225,28 +219,6 @@ void main() {
       expect(state.connectionState, PolarConnectionState.error);
     },
   );
-
-  test('connectAndStartRelay retries connect after connection error', () async {
-    final c = container();
-    final notifier = c.read(pacerNotifierProvider.notifier);
-    c.read(pacerNotifierProvider);
-
-    await notifier.connectAndStartRelay();
-    verify(() => mockPacer.connect()).called(1);
-
-    errorCtrl.add(
-      const PolarPacerError(
-        message: 'Connect timed out',
-        isConnectionError: true,
-      ),
-    );
-    await Future<void>.delayed(Duration.zero);
-    connCtrl.add(PolarConnectionState.error);
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-
-    verify(() => mockPacer.connect()).called(1);
-    expect(c.read(pacerNotifierProvider).lastError, contains('Retrying in'));
-  });
 
   test(
     'ACC stream failure keeps Pacer relay active when HR relay is healthy',

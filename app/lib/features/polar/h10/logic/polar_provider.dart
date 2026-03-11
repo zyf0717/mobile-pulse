@@ -1,10 +1,9 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import '../../../../services/polar_h10_service.dart';
+import '../../../../services/relay_push_service.dart';
 import '../../../../config/app_env.dart';
 import '../../common/logic/polar_relay_status.dart';
 import '../../common/models/polar_connection_state.dart';
-import '../../../../services/polar_h10_service.dart';
-import '../../../../services/relay_push_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class PolarState {
   final PolarConnectionState connectionState;
@@ -112,7 +111,9 @@ class PolarNotifier extends Notifier<PolarState> {
     return const PolarState();
   }
 
-  Future<void> connect() => ref.read(polarH10ServiceProvider).connect();
+  Future<void> connect() async {
+    await ref.read(polarH10ServiceProvider).connect();
+  }
 
   /// Used by Start All: connect then auto-start the H10 relay once connected.
   Future<void> connectAndStartRelay() {
