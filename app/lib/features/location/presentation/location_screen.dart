@@ -196,6 +196,7 @@ class _BottomPanel extends ConsumerWidget {
               status: pacer.pacerRelayStatus,
               offLabel: 'Pacer relay off',
               okLabel: 'Pacer relay OK',
+              errorLabel: 'Relay error',
             ),
             trailing: _RelayButton(
               active: pacer.pacerRelayActive,
@@ -314,12 +315,14 @@ class _StatusChip extends StatelessWidget {
   final RelayPushStatus status;
   final String offLabel;
   final String okLabel;
+  final String? errorLabel;
 
   const _StatusChip({
     required this.active,
     required this.status,
     required this.offLabel,
     required this.okLabel,
+    this.errorLabel,
   });
 
   @override
@@ -339,7 +342,7 @@ class _StatusChip extends StatelessWidget {
     } else if (status == RelayPushStatus.error) {
       color = Colors.red;
       icon = Icons.cloud_off;
-      label = '${offLabel.split(' ').first} error';
+      label = errorLabel ?? '${offLabel.split(' ').first} error';
     } else {
       color = Colors.orange;
       icon = Icons.sync;
