@@ -11,6 +11,10 @@ import '../../polar/pacer/logic/pacer_provider.dart';
 import '../../../services/relay_push_service.dart';
 
 const double _controlButtonWidth = 152;
+const double _screenPadding = 16;
+const double _controlRowVerticalPadding = 6;
+const double _sectionSpacing = 12;
+const double _tileSpacing = 12;
 
 class LocationScreen extends ConsumerWidget {
   const LocationScreen({super.key});
@@ -38,7 +42,7 @@ class LocationScreen extends ConsumerWidget {
               ),
               error: (e, _) => Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(_screenPadding),
                   child: Text(
                     'GPS error: $e',
                     style: TextStyle(
@@ -51,7 +55,7 @@ class LocationScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
-          const _BottomPanel(),
+          const Flexible(fit: FlexFit.loose, child: _BottomPanel()),
         ],
       ),
     );
@@ -85,137 +89,142 @@ class _BottomPanel extends ConsumerWidget {
         pacer.connectionState == PolarConnectionState.error;
 
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ControlRow(
-            leading: _StatusChip(
-              active: relay.active,
-              status: relay.status,
-              offLabel: 'GPS relay off',
-              okLabel: 'GPS relay OK',
+      top: false,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ControlRow(
+              leading: _StatusChip(
+                active: relay.active,
+                status: relay.status,
+                offLabel: 'GPS relay off',
+                okLabel: 'GPS relay OK',
+              ),
+              trailing: _RelayButton(
+                active: relay.active,
+                pushLabel: 'Push GPS',
+                onToggle: rNotifier.toggle,
+              ),
             ),
-            trailing: _RelayButton(
-              active: relay.active,
-              pushLabel: 'Push GPS',
-              onToggle: rNotifier.toggle,
+            _ControlRow(
+              leading: _StatusChip(
+                active: pulse.active,
+                status: pulse.status,
+                offLabel: 'Pulse relay off',
+                okLabel: 'Pulse relay OK',
+              ),
+              trailing: _RelayButton(
+                active: pulse.active,
+                pushLabel: 'Push Pulse',
+                onToggle: puNotifier.toggle,
+              ),
             ),
-          ),
-          _ControlRow(
-            leading: _StatusChip(
-              active: pulse.active,
-              status: pulse.status,
-              offLabel: 'Pulse relay off',
-              okLabel: 'Pulse relay OK',
-            ),
-            trailing: _RelayButton(
-              active: pulse.active,
-              pushLabel: 'Push Pulse',
-              onToggle: puNotifier.toggle,
-            ),
-          ),
-          const Divider(height: 1),
-          _ControlRow(
-            leading: _H10StatusChip(polar: h10),
-            trailing: SizedBox(
-              width: _controlButtonWidth,
-              child: h10Idle
-                  ? OutlinedButton(
-                      onPressed: h10Notifier.connect,
-                      child: const Text('Connect'),
-                    )
-                  : h10Connected
-                  ? OutlinedButton(
-                      onPressed: h10Notifier.disconnect,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
+            const Divider(height: 1),
+            _ControlRow(
+              leading: _H10StatusChip(polar: h10),
+              trailing: SizedBox(
+                width: _controlButtonWidth,
+                child: h10Idle
+                    ? OutlinedButton(
+                        onPressed: h10Notifier.connect,
+                        child: const Text('Connect'),
+                      )
+                    : h10Connected
+                    ? OutlinedButton(
+                        onPressed: h10Notifier.disconnect,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                        ),
+                        child: const Text('Disconnect'),
+                      )
+                    : OutlinedButton(
+                        onPressed: null,
+                        child: const Text(
+                          'Connecting...',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
                       ),
-                      child: const Text('Disconnect'),
-                    )
-                  : OutlinedButton(
-                      onPressed: null,
-                      child: const Text(
-                        'Connecting...',
-                        maxLines: 1,
-                        softWrap: false,
+              ),
+            ),
+            _ControlRow(
+              leading: _StatusChip(
+                active: h10.h10RelayActive,
+                status: h10.h10RelayStatus,
+                offLabel: 'H10 relay off',
+                okLabel: 'H10 relay OK',
+              ),
+              trailing: _RelayButton(
+                active: h10.h10RelayActive,
+                pushLabel: 'Push H10',
+                onToggle: h10Connected ? h10Notifier.toggleH10Relay : null,
+              ),
+            ),
+            const Divider(height: 1),
+            _ControlRow(
+              leading: _PacerStatusChip(pacer: pacer),
+              trailing: SizedBox(
+                width: _controlButtonWidth,
+                child: !pacer.isConfigured
+                    ? const OutlinedButton(
+                        onPressed: null,
+                        child: Text('No ID', maxLines: 1, softWrap: false),
+                      )
+                    : pacerIdle
+                    ? OutlinedButton(
+                        onPressed: pacerNotifier.connect,
+                        child: const Text('Connect'),
+                      )
+                    : pacerConnected
+                    ? OutlinedButton(
+                        onPressed: pacerNotifier.disconnect,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                        ),
+                        child: const Text('Disconnect'),
+                      )
+                    : OutlinedButton(
+                        onPressed: null,
+                        child: const Text(
+                          'Connecting...',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
                       ),
-                    ),
+              ),
             ),
-          ),
-          _ControlRow(
-            leading: _StatusChip(
-              active: h10.h10RelayActive,
-              status: h10.h10RelayStatus,
-              offLabel: 'H10 relay off',
-              okLabel: 'H10 relay OK',
+            _ControlRow(
+              leading: _StatusChip(
+                active: pacer.pacerRelayActive,
+                status: pacer.pacerRelayStatus,
+                offLabel: 'Pacer relay off',
+                okLabel: 'Pacer relay OK',
+                errorLabel: 'Relay error',
+              ),
+              trailing: _RelayButton(
+                active: pacer.pacerRelayActive,
+                pushLabel: 'Push Pacer',
+                onToggle: pacerConnected
+                    ? pacerNotifier.togglePacerRelay
+                    : null,
+              ),
             ),
-            trailing: _RelayButton(
-              active: h10.h10RelayActive,
-              pushLabel: 'Push H10',
-              onToggle: h10Connected ? h10Notifier.toggleH10Relay : null,
+            const Divider(height: 1),
+            _StartStopAllButton(
+              relay: relay,
+              pulse: pulse,
+              h10: h10,
+              pacer: pacer,
+              rNotifier: rNotifier,
+              puNotifier: puNotifier,
+              h10Notifier: h10Notifier,
+              pacerNotifier: pacerNotifier,
             ),
-          ),
-          const Divider(height: 1),
-          _ControlRow(
-            leading: _PacerStatusChip(pacer: pacer),
-            trailing: SizedBox(
-              width: _controlButtonWidth,
-              child: !pacer.isConfigured
-                  ? const OutlinedButton(
-                      onPressed: null,
-                      child: Text('No ID', maxLines: 1, softWrap: false),
-                    )
-                  : pacerIdle
-                  ? OutlinedButton(
-                      onPressed: pacerNotifier.connect,
-                      child: const Text('Connect'),
-                    )
-                  : pacerConnected
-                  ? OutlinedButton(
-                      onPressed: pacerNotifier.disconnect,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                      ),
-                      child: const Text('Disconnect'),
-                    )
-                  : OutlinedButton(
-                      onPressed: null,
-                      child: const Text(
-                        'Connecting...',
-                        maxLines: 1,
-                        softWrap: false,
-                      ),
-                    ),
-            ),
-          ),
-          _ControlRow(
-            leading: _StatusChip(
-              active: pacer.pacerRelayActive,
-              status: pacer.pacerRelayStatus,
-              offLabel: 'Pacer relay off',
-              okLabel: 'Pacer relay OK',
-              errorLabel: 'Relay error',
-            ),
-            trailing: _RelayButton(
-              active: pacer.pacerRelayActive,
-              pushLabel: 'Push Pacer',
-              onToggle: pacerConnected ? pacerNotifier.togglePacerRelay : null,
-            ),
-          ),
-          const Divider(height: 1),
-          _StartStopAllButton(
-            relay: relay,
-            pulse: pulse,
-            h10: h10,
-            pacer: pacer,
-            rNotifier: rNotifier,
-            puNotifier: puNotifier,
-            h10Notifier: h10Notifier,
-            pacerNotifier: pacerNotifier,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -260,7 +269,12 @@ class _StartStopAllButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final stopping = _anyActive;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+      padding: const EdgeInsets.fromLTRB(
+        _screenPadding,
+        _sectionSpacing,
+        _screenPadding,
+        _controlRowVerticalPadding,
+      ),
       child: Center(
         child: FilledButton(
           onPressed: () {
@@ -297,7 +311,10 @@ class _ControlRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: _screenPadding,
+        vertical: _controlRowVerticalPadding,
+      ),
       child: Row(
         children: [
           Expanded(child: leading),
@@ -509,47 +526,54 @@ class _LocationDisplay extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _Tile(
-              icon: Icons.location_on,
-              label: 'Latitude',
-              value: loc.latitude.toStringAsFixed(6),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.all(_screenPadding),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: constraints.maxHeight - (_screenPadding * 2),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Tile(
+                  icon: Icons.location_on,
+                  label: 'Latitude',
+                  value: loc.latitude.toStringAsFixed(6),
+                ),
+                const SizedBox(height: _tileSpacing),
+                _Tile(
+                  icon: Icons.location_on_outlined,
+                  label: 'Longitude',
+                  value: loc.longitude.toStringAsFixed(6),
+                ),
+                const SizedBox(height: _tileSpacing),
+                _Tile(
+                  icon: Icons.speed,
+                  label: 'Speed',
+                  value: '${loc.speedKmh.toStringAsFixed(1)} km/h',
+                ),
+                const SizedBox(height: _tileSpacing),
+                _Tile(
+                  icon: Icons.terrain,
+                  label: 'Altitude',
+                  value: '${loc.altitude.toStringAsFixed(1)} m',
+                ),
+                const SizedBox(height: _tileSpacing),
+                _Tile(
+                  icon: Icons.gps_fixed,
+                  label: 'Accuracy',
+                  value: '±${loc.accuracy.toStringAsFixed(1)} m',
+                ),
+                const SizedBox(height: _sectionSpacing),
+                Text(
+                  'Updated ${TimeOfDay.fromDateTime(loc.timestamp).format(context)}',
+                  style: textTheme.bodySmall,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _Tile(
-              icon: Icons.location_on_outlined,
-              label: 'Longitude',
-              value: loc.longitude.toStringAsFixed(6),
-            ),
-            const SizedBox(height: 16),
-            _Tile(
-              icon: Icons.speed,
-              label: 'Speed',
-              value: '${loc.speedKmh.toStringAsFixed(1)} km/h',
-            ),
-            const SizedBox(height: 16),
-            _Tile(
-              icon: Icons.terrain,
-              label: 'Altitude',
-              value: '${loc.altitude.toStringAsFixed(1)} m',
-            ),
-            const SizedBox(height: 16),
-            _Tile(
-              icon: Icons.gps_fixed,
-              label: 'Accuracy',
-              value: '±${loc.accuracy.toStringAsFixed(1)} m',
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Updated ${TimeOfDay.fromDateTime(loc.timestamp).format(context)}',
-              style: textTheme.bodySmall,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -568,7 +592,7 @@ class _Tile extends StatelessWidget {
     return Row(
       children: [
         Icon(icon, size: 28),
-        const SizedBox(width: 12),
+        const SizedBox(width: _tileSpacing),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

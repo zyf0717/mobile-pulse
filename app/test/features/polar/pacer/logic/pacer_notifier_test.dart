@@ -138,6 +138,38 @@ void main() {
     expect(c.read(pacerNotifierProvider).latestBpm, 63);
   });
 
+  test('ignores zero bpm updates from HR and PPI streams', () async {
+    final c = container();
+    c.read(pacerNotifierProvider);
+
+    hrCtrl.add(HrData(bpm: 68, timestamp: DateTime.now()));
+    await Future<void>.delayed(Duration.zero);
+    expect(c.read(pacerNotifierProvider).latestBpm, 68);
+
+    hrCtrl.add(HrData(bpm: 0, timestamp: DateTime.now()));
+    await Future<void>.delayed(Duration.zero);
+    expect(c.read(pacerNotifierProvider).latestBpm, 68);
+
+    ppiCtrl.add(
+      PpiData(
+        timestamp: DateTime.now(),
+        samples: const [
+          PpiSample(
+            ppiMs: 950,
+            errorEstimateMs: 4,
+            hr: 0,
+            blockerBit: false,
+            skinContactStatus: true,
+            skinContactSupported: true,
+            timestampNs: 1,
+          ),
+        ],
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(c.read(pacerNotifierProvider).latestBpm, 68);
+  });
+
   test('togglePacerRelay starts relay streams and all relays', () async {
     final c = container();
 

@@ -90,11 +90,13 @@ class PacerNotifier extends Notifier<PacerState> {
       }
     });
 
-    final hrSub = pacer.hrStream.listen(
-      (hr) => state = state.copyWith(latestBpm: hr.bpm),
-    );
+    final hrSub = pacer.hrStream.listen((hr) {
+      if (hr.bpm > 0) {
+        state = state.copyWith(latestBpm: hr.bpm);
+      }
+    });
     final ppiSub = pacer.ppiStream.listen((ppi) {
-      if (ppi.samples.isNotEmpty) {
+      if (ppi.samples.isNotEmpty && ppi.samples.first.hr > 0) {
         state = state.copyWith(latestBpm: ppi.samples.first.hr);
       }
     });
