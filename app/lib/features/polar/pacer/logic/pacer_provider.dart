@@ -10,6 +10,7 @@ class PacerState {
   final bool isConfigured;
   final PolarConnectionState connectionState;
   final int? latestBpm;
+  final String? lastError;
   final bool pacerRelayActive;
   final RelayPushStatus hrRelayStatus;
   final RelayPushStatus accRelayStatus;
@@ -19,6 +20,7 @@ class PacerState {
     this.isConfigured = false,
     this.connectionState = PolarConnectionState.disconnected,
     this.latestBpm,
+    this.lastError,
     this.pacerRelayActive = false,
     this.hrRelayStatus = RelayPushStatus.idle,
     this.accRelayStatus = RelayPushStatus.idle,
@@ -35,6 +37,8 @@ class PacerState {
     PolarConnectionState? connectionState,
     int? latestBpm,
     bool? latestBpmSet,
+    String? lastError,
+    bool? clearLastError,
     bool? pacerRelayActive,
     RelayPushStatus? hrRelayStatus,
     RelayPushStatus? accRelayStatus,
@@ -43,6 +47,7 @@ class PacerState {
     isConfigured: isConfigured ?? this.isConfigured,
     connectionState: connectionState ?? this.connectionState,
     latestBpm: latestBpmSet == true ? null : (latestBpm ?? this.latestBpm),
+    lastError: clearLastError == true ? null : (lastError ?? this.lastError),
     pacerRelayActive: pacerRelayActive ?? this.pacerRelayActive,
     hrRelayStatus: hrRelayStatus ?? this.hrRelayStatus,
     accRelayStatus: accRelayStatus ?? this.accRelayStatus,
@@ -70,6 +75,7 @@ class PacerNotifier extends Notifier<PacerState> {
         state = state.copyWith(
           connectionState: s,
           latestBpmSet: true,
+          clearLastError: s != PolarConnectionState.error,
           pacerRelayActive: false,
           hrRelayStatus: RelayPushStatus.idle,
           accRelayStatus: RelayPushStatus.idle,
@@ -92,6 +98,9 @@ class PacerNotifier extends Notifier<PacerState> {
         state = state.copyWith(latestBpm: ppi.samples.first.hr);
       }
     });
+    final errorSub = pacer.errorStream.listen(
+      (message) => state = state.copyWith(lastError: message),
+    );
     final hrRelaySub = hrRelay.statusStream.listen(
       (s) => state = state.copyWith(hrRelayStatus: s),
     );
@@ -106,6 +115,7 @@ class PacerNotifier extends Notifier<PacerState> {
       connSub.cancel();
       hrSub.cancel();
       ppiSub.cancel();
+      errorSub.cancel();
       hrRelaySub.cancel();
       accRelaySub.cancel();
       ppiRelaySub.cancel();
@@ -160,7 +170,7 @@ class PacerNotifier extends Notifier<PacerState> {
     accRelay.start(pacer.accStream.map((acc) => acc.toJson()));
     ppiRelay.start(pacer.ppiStream.map((ppi) => ppi.toJson()));
     await pacer.startRelayStreams();
-    state = state.copyWith(pacerRelayActive: true);
+    state = state.copyWith(pacerRelayActive: true, clearLastError: true);
   }
 
   Future<void> _stopPacerRelay() async {

@@ -1,6 +1,8 @@
 package com.example.mobile_pulse
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.polar.androidcommunications.api.ble.model.DisInfo
 import com.polar.sdk.api.PolarBleApi
 import com.polar.sdk.api.PolarBleApiCallback
@@ -16,6 +18,20 @@ import io.flutter.plugin.common.MethodChannel
 import io.reactivex.rxjava3.disposables.Disposable
 import java.time.Instant
 
+// Version-pinned notes for this bridge:
+// - Gradle currently depends on com.github.polarofficial:polar-ble-sdk:6.15.0.
+// - Product/watch behavior was cross-checked against the official repo docs:
+//   documentation/products/PolarPacerAndPacerPro.md
+//   documentation/UsingSDKWithWatches.md
+// - API surface was validated against the 6.15.0 AAR we actually compile, not
+//   just the repo's master-branch examples. That matters because the generated
+//   docs/examples and the shipped callback signatures can drift.
+//
+// If the SDK version changes, re-check at least:
+// - PolarBleApiCallback abstract methods
+// - PolarBleApi.PolarDeviceDataType enum location
+// - PolarPpiData.PolarPpiSample property names/types
+// - watch setup requirements for SDK Share / exercise wait mode
 class PolarPacerChannelHandler(
     context: Context,
     messenger: BinaryMessenger,
@@ -36,6 +52,7 @@ class PolarPacerChannelHandler(
 
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var eventSink: EventChannel.EventSink? = null
     private var deviceId: String = ""
@@ -50,6 +67,8 @@ class PolarPacerChannelHandler(
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(this)
         api.setApiCallback(object : PolarBleApiCallback() {
+            // In the 6.15.0 artifact these two callbacks are abstract and must
+            // be implemented even though this app does not use DIS/HTS data.
             override fun deviceConnecting(polarDeviceInfo: PolarDeviceInfo) {
                 if (matches(polarDeviceInfo.deviceId)) emitConnection("connecting")
             }
@@ -74,6 +93,10 @@ class PolarPacerChannelHandler(
             ) {
                 if (!matches(identifier)) return
                 connectedIdentifier = identifier
+                // Official watch docs say online streams become usable only
+                // after SDK Share is enabled on-watch and the watch is in an
+                // exercise wait view. FEATURE_POLAR_ONLINE_STREAMING becoming
+                // ready is our gate before requesting ACC/PPI streams.
                 if (feature == PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING) {
                     onlineStreamingReady = true
                     startPendingStreams()
@@ -177,6 +200,8 @@ class PolarPacerChannelHandler(
         if (!onlineStreamingReady) return
 
         if (shouldStartAcc && accDisposable == null) {
+            // For 6.15.0 the data type enum is nested under PolarBleApi, not
+            // com.polar.sdk.api.model.*.
             accDisposable = api.requestStreamSettings(
                 identifier,
                 PolarBleApi.PolarDeviceDataType.ACC,
@@ -187,6 +212,8 @@ class PolarPacerChannelHandler(
                         emit(
                             mapOf(
                                 "type" to "acc",
+                                // Polar's Pacer/Pacer Pro product guide documents
+                                // ACC as 50 Hz, 8 G, axis values in mG.
                                 "sample_rate_hz" to 50,
                                 "samples_mg" to data.samples.map { sample ->
                                     mapOf(
@@ -200,8 +227,16 @@ class PolarPacerChannelHandler(
                         )
                     },
                     { error ->
+                        stopAccStream()
                         emitConnection("error")
-                        emit(mapOf("type" to "error", "message" to (error.message ?: "ACC stream failed")))
+                        emit(
+                            mapOf(
+                                "type" to "error",
+                                "message" to streamErrorMessage(
+                                    error.message ?: "ACC stream failed",
+                                ),
+                            ),
+                        )
                     },
                 )
         }
@@ -214,6 +249,9 @@ class PolarPacerChannelHandler(
                             mapOf(
                                 "type" to "ppi",
                                 "samples" to data.samples.map { sample ->
+                                    // In the 6.15.0 AAR the Kotlin properties are
+                                    // ppi/errorEstimate and the contact/blocker
+                                    // flags are booleans already.
                                     mapOf(
                                         "ppi_ms" to sample.ppi.toInt(),
                                         "error_estimate_ms" to sample.errorEstimate.toInt(),
@@ -229,8 +267,16 @@ class PolarPacerChannelHandler(
                         )
                     },
                     { error ->
+                        stopPpiStream()
                         emitConnection("error")
-                        emit(mapOf("type" to "error", "message" to (error.message ?: "PPI stream failed")))
+                        emit(
+                            mapOf(
+                                "type" to "error",
+                                "message" to streamErrorMessage(
+                                    error.message ?: "PPI stream failed",
+                                ),
+                            ),
+                        )
                     },
                 )
         }
@@ -256,12 +302,24 @@ class PolarPacerChannelHandler(
     }
 
     private fun emit(payload: Map<String, Any?>) {
-        eventSink?.success(payload)
+        mainHandler.post {
+            eventSink?.success(payload)
+        }
+    }
+
+    private fun streamErrorMessage(message: String): String {
+        return if (message.contains("ERROR_INVALID_STATE")) {
+            "$message. On Polar Pacer, enable SDK Share on the watch and stay on an exercise wait screen before starting ACC/PPI."
+        } else {
+            message
+        }
     }
 
     private fun matches(identifier: String): Boolean {
         if (deviceId.isBlank()) return false
         if (identifier == deviceId) return true
+        // Polar watch identifiers may include more than the 8-char device id,
+        // so we allow the configured id to match as an uppercase substring.
         return identifier.uppercase().contains(deviceId.uppercase())
     }
 }

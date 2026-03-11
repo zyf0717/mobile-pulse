@@ -23,6 +23,7 @@ class PolarPacerService {
   final _hrController = StreamController<HrData>.broadcast();
   final _accController = StreamController<AccData>.broadcast();
   final _ppiController = StreamController<PpiData>.broadcast();
+  final _errorController = StreamController<String>.broadcast();
 
   StreamSubscription<dynamic>? _eventSubscription;
 
@@ -44,6 +45,7 @@ class PolarPacerService {
   Stream<HrData> get hrStream => _hrController.stream;
   Stream<AccData> get accStream => _accController.stream;
   Stream<PpiData> get ppiStream => _ppiController.stream;
+  Stream<String> get errorStream => _errorController.stream;
 
   Future<void> connect() async {
     if (!await _requestPermissions()) {
@@ -82,6 +84,7 @@ class PolarPacerService {
     _hrController.close();
     _accController.close();
     _ppiController.close();
+    _errorController.close();
   }
 
   Future<bool> _requestPermissions() async {
@@ -157,6 +160,15 @@ class PolarPacerService {
                 DateTime.now(),
           ),
         );
+      case 'error':
+        final message =
+            mapped['message'] as String? ?? 'Polar Pacer stream error';
+        if (!_errorController.isClosed) {
+          _errorController.add(message);
+        }
+        if (!_connectionController.isClosed) {
+          _connectionController.add(PolarConnectionState.error);
+        }
     }
   }
 }

@@ -448,7 +448,7 @@ class _PacerStatusChip extends StatelessWidget {
       PolarConnectionState.error => (
         Colors.red,
         Icons.watch_off,
-        'Pacer error',
+        pacer.lastError ?? 'Pacer error',
       ),
     };
 

@@ -26,6 +26,7 @@ void main() {
   late StreamController<HrData> hrCtrl;
   late StreamController<AccData> accCtrl;
   late StreamController<PpiData> ppiCtrl;
+  late StreamController<String> errorCtrl;
   late StreamController<RelayPushStatus> hrStatusCtrl;
   late StreamController<RelayPushStatus> accStatusCtrl;
   late StreamController<RelayPushStatus> ppiStatusCtrl;
@@ -44,6 +45,7 @@ void main() {
     hrCtrl = StreamController<HrData>.broadcast();
     accCtrl = StreamController<AccData>.broadcast();
     ppiCtrl = StreamController<PpiData>.broadcast();
+    errorCtrl = StreamController<String>.broadcast();
     hrStatusCtrl = StreamController<RelayPushStatus>.broadcast();
     accStatusCtrl = StreamController<RelayPushStatus>.broadcast();
     ppiStatusCtrl = StreamController<RelayPushStatus>.broadcast();
@@ -53,6 +55,7 @@ void main() {
     when(() => mockPacer.hrStream).thenAnswer((_) => hrCtrl.stream);
     when(() => mockPacer.accStream).thenAnswer((_) => accCtrl.stream);
     when(() => mockPacer.ppiStream).thenAnswer((_) => ppiCtrl.stream);
+    when(() => mockPacer.errorStream).thenAnswer((_) => errorCtrl.stream);
     when(() => mockPacer.connect()).thenAnswer((_) async {});
     when(() => mockPacer.disconnect()).thenAnswer((_) async {});
     when(() => mockPacer.startRelayStreams()).thenAnswer((_) async {});
@@ -80,6 +83,7 @@ void main() {
       hrCtrl.close(),
       accCtrl.close(),
       ppiCtrl.close(),
+      errorCtrl.close(),
       hrStatusCtrl.close(),
       accStatusCtrl.close(),
       ppiStatusCtrl.close(),
@@ -157,4 +161,21 @@ void main() {
     verify(() => mockPacer.stopRelayStreams()).called(1);
     verify(() => mockPacer.disconnect()).called(1);
   });
+
+  test(
+    'native error updates lastError and transitions to error state',
+    () async {
+      final c = container();
+      c.read(pacerNotifierProvider);
+
+      errorCtrl.add('PPI stream failed');
+      await Future<void>.delayed(Duration.zero);
+      connCtrl.add(PolarConnectionState.error);
+      await Future<void>.delayed(Duration.zero);
+
+      final state = c.read(pacerNotifierProvider);
+      expect(state.lastError, 'PPI stream failed');
+      expect(state.connectionState, PolarConnectionState.error);
+    },
+  );
 }
