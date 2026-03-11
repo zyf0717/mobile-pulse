@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'features/hr/logic/polar_provider.dart';
 import 'features/location/logic/relay_provider.dart';
 import 'features/location/presentation/location_screen.dart';
+import 'features/polar/h10/logic/polar_provider.dart';
 import 'features/pulse/logic/pulse_provider.dart';
 import 'services/polar_h10_service.dart';
 

@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:mobile_pulse/features/hr/logic/polar_provider.dart';
-import 'package:mobile_pulse/features/hr/models/acc_data.dart';
-import 'package:mobile_pulse/features/hr/models/ecg_data.dart';
-import 'package:mobile_pulse/features/hr/models/hr_data.dart';
+import 'package:mobile_pulse/features/polar/h10/logic/polar_provider.dart';
+import 'package:mobile_pulse/features/polar/h10/models/acc_data.dart';
+import 'package:mobile_pulse/features/polar/h10/models/ecg_data.dart';
+import 'package:mobile_pulse/features/polar/h10/models/hr_data.dart';
 import 'package:mobile_pulse/services/polar_h10_service.dart';
 import 'package:mobile_pulse/services/relay_push_service.dart';
 
@@ -107,7 +107,6 @@ void main() {
   group('HR stream updates latestBpm', () {
     test('bpm is reflected in state after HR emission', () async {
       final container = _container();
-      // trigger build
       container.read(polarNotifierProvider);
 
       hrCtrl.add(HrData(bpm: 72, timestamp: DateTime.now()));
@@ -130,8 +129,8 @@ void main() {
     test('deactivates all three relays and calls stop() on each', () {
       final container = _container();
       final notifier = container.read(polarNotifierProvider.notifier);
-      notifier.toggleH10Relay(); // on
-      notifier.toggleH10Relay(); // off
+      notifier.toggleH10Relay();
+      notifier.toggleH10Relay();
       expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
       verify(() => mockHrRelay.stop()).called(1);
       verify(() => mockEcgRelay.stop()).called(1);
@@ -149,7 +148,6 @@ void main() {
         notifier.toggleH10Relay();
         expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
 
-        // Simulate connection drop.
         connCtrl.add(PolarConnectionState.disconnected);
         await Future<void>.delayed(Duration.zero);
 
@@ -186,7 +184,6 @@ void main() {
       final container = _container();
       final notifier = container.read(polarNotifierProvider.notifier);
 
-      // Simulate already connected.
       connCtrl.add(PolarConnectionState.connected);
       await Future<void>.delayed(Duration.zero);
 
@@ -196,7 +193,6 @@ void main() {
       verify(() => mockHrRelay.start(any())).called(1);
       verify(() => mockEcgRelay.start(any())).called(1);
       verify(() => mockAccRelay.start(any())).called(1);
-      // Should not call connect() again.
       verifyNever(() => mockH10.connect());
     });
 
@@ -209,10 +205,10 @@ void main() {
         connCtrl.add(PolarConnectionState.connected);
         await Future<void>.delayed(Duration.zero);
 
-        await notifier.connectAndStartRelay(); // starts relay
-        await notifier.connectAndStartRelay(); // should be a no-op
+        await notifier.connectAndStartRelay();
+        await notifier.connectAndStartRelay();
 
-        verify(() => mockHrRelay.start(any())).called(1); // only once
+        verify(() => mockHrRelay.start(any())).called(1);
       },
     );
 
@@ -222,12 +218,10 @@ void main() {
         final container = _container();
         final notifier = container.read(polarNotifierProvider.notifier);
 
-        // Trigger connect while disconnected → sets _startAllPending.
         await notifier.connectAndStartRelay();
         verify(() => mockH10.connect()).called(1);
         expect(container.read(polarNotifierProvider).h10RelayActive, isFalse);
 
-        // Simulate connection success.
         connCtrl.add(PolarConnectionState.connected);
         await Future<void>.delayed(Duration.zero);
 
@@ -244,8 +238,7 @@ void main() {
         final container = _container();
         final notifier = container.read(polarNotifierProvider.notifier);
 
-        await notifier.connectAndStartRelay(); // sets pending
-        // Connection fails / dropped before connecting.
+        await notifier.connectAndStartRelay();
         connCtrl.add(PolarConnectionState.disconnected);
         await Future<void>.delayed(Duration.zero);
 
@@ -273,10 +266,9 @@ void main() {
         final container = _container();
         final notifier = container.read(polarNotifierProvider.notifier);
 
-        await notifier.connectAndStartRelay(); // pending = true
-        await notifier.stopAll(); // should clear pending
+        await notifier.connectAndStartRelay();
+        await notifier.stopAll();
 
-        // Now fire connected — relay must NOT auto-start.
         connCtrl.add(PolarConnectionState.connected);
         await Future<void>.delayed(Duration.zero);
 

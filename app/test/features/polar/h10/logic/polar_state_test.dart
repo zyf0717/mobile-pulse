@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mobile_pulse/features/hr/logic/polar_provider.dart';
+import 'package:mobile_pulse/features/polar/h10/logic/polar_provider.dart';
 import 'package:mobile_pulse/services/polar_h10_service.dart';
 import 'package:mobile_pulse/services/relay_push_service.dart';
 
@@ -32,7 +32,6 @@ void main() {
       expect(next.latestBpm, 72);
       expect(next.h10RelayActive, isTrue);
       expect(next.hrRelayStatus, RelayPushStatus.ok);
-      // ECG and ACC statuses stay at defaults.
       expect(next.ecgRelayStatus, RelayPushStatus.idle);
       expect(next.accRelayStatus, RelayPushStatus.idle);
     });

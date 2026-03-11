@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mobile_pulse/features/hr/models/hr_data.dart';
+import 'package:mobile_pulse/features/polar/h10/models/hr_data.dart';
 
 void main() {
   final ts = DateTime.utc(2026, 3, 10, 12, 0, 0);
@@ -21,7 +21,6 @@ void main() {
     });
 
     test('timestamp is coerced to UTC in output', () {
-      // Local DateTime — toJson must still produce a Z-suffixed string.
       final local = DateTime(2026, 3, 10, 12, 0, 0);
       final json = HrData(bpm: 60, timestamp: local).toJson();
       expect((json['timestamp'] as String).endsWith('Z'), isTrue);

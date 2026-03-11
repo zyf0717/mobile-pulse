@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mobile_pulse/features/hr/models/acc_data.dart';
+import 'package:mobile_pulse/features/polar/h10/models/acc_data.dart';
 
 void main() {
   final ts = DateTime.utc(2026, 3, 10, 12, 0, 0);

@@ -6,8 +6,8 @@ import '../logic/relay_provider.dart';
 import '../models/location_data.dart';
 import '../../../services/relay_push_service.dart';
 import '../../../services/polar_h10_service.dart';
-import '../../hr/logic/polar_provider.dart';
 import '../../pulse/logic/pulse_provider.dart';
+import '../../polar/h10/logic/polar_provider.dart';
 
 const double _controlButtonWidth = 152;
 

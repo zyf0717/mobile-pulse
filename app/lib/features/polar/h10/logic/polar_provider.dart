@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../config/app_env.dart';
-import '../../../services/polar_h10_service.dart';
-import '../../../services/relay_push_service.dart';
+import '../../../../config/app_env.dart';
+import '../../../../services/polar_h10_service.dart';
+import '../../../../services/relay_push_service.dart';
 
 class PolarState {
   final PolarConnectionState connectionState;

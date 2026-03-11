@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../features/hr/models/acc_data.dart';
-import '../features/hr/models/ecg_data.dart';
-import '../features/hr/models/hr_data.dart';
+import '../features/polar/h10/models/acc_data.dart';
+import '../features/polar/h10/models/ecg_data.dart';
+import '../features/polar/h10/models/hr_data.dart';
 
 enum PolarConnectionState {
   disconnected,
