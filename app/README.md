@@ -1,30 +1,38 @@
 # mobile_pulse
 
-Runtime configuration is provided through compile-time Dart defines in
-`dart_defines.env`.
+Flutter app that streams sensor data from a Polar H10 and a Polar Pacer to a relay server, alongside GPS and pulse-oximeter streams.
 
-Run the app with:
+## Features
 
-```bash
+- **GPS** — live location stream relayed over HTTP
+- **Pulse** — pulse-oximeter stream relayed over HTTP
+- **Polar H10** — HR, ACC, ECG streams via the `polar` package
+- **Polar Pacer** — HR, ACC, PPI streams via the `polar` package
+
+## Setup
+
+Copy `dart_defines.env.example` to `dart_defines.env` and fill in device IDs and relay URLs.
+
+## Commands
+
+```sh
+# Connect tailscale device if applicable
+adb tcpip 5555
+adb connect 100.81.55.124:5555
+
+# Install dependencies
+flutter pub get
+
+# Analyse
+flutter analyze
+
+# Run tests
+flutter test
+
+# Run on a connected device (with env vars)
 flutter run --dart-define-from-file=dart_defines.env
+
+# Build APK
+flutter build apk --dart-define-from-file=dart_defines.env
 ```
 
-Current keys:
-
-```text
-POLAR_H10_DEVICE_ID
-POLAR_PACER_DEVICE_ID
-RELAY_GPS_URL
-RELAY_PULSE_URL
-RELAY_H10_HR_URL
-RELAY_H10_ECG_URL
-RELAY_H10_ACC_URL
-RELAY_PACER_HR_URL
-RELAY_PACER_ACC_URL
-RELAY_PACER_PPI_URL
-```
-
-Polar Pacer support depends on Polar's watch SDK-sharing flow. Per Polar's
-official docs, the watch must be paired to this phone, `SDK -> Share` must be
-enabled on the watch, and streaming is only available from an exercise wait
-screen.
