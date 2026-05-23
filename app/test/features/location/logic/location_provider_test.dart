@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:mobile_pulse/features/location/data/location_repository.dart';
 import 'package:mobile_pulse/features/location/logic/location_provider.dart';
 import 'package:mobile_pulse/features/location/models/location_data.dart';
 import 'package:mobile_pulse/services/location_service.dart';
@@ -27,7 +26,7 @@ void main() {
     mockService = MockLocationService();
   });
 
-  ProviderContainer _container() => ProviderContainer(
+  ProviderContainer makeContainer() => ProviderContainer(
     overrides: [locationServiceProvider.overrideWithValue(mockService)],
   );
 
@@ -38,11 +37,11 @@ void main() {
         (_) => Stream.fromIterable([_fix(lat: 3.0), _fix(lat: 4.0)]),
       );
 
-      final container = _container();
+      final container = makeContainer();
       addTearDown(container.dispose);
 
       // Advance past loading state
-      final sub = container.listen(locationStreamProvider, (_, __) {});
+      final sub = container.listen(locationStreamProvider, (_, _) {});
       addTearDown(sub.close);
 
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -60,7 +59,7 @@ void main() {
         () => mockService.locationStream,
       ).thenAnswer((_) => const Stream.empty());
 
-      final container = _container();
+      final container = makeContainer();
       addTearDown(container.dispose);
 
       // Riverpod 3 StreamProvider retries on error, cycling through
@@ -81,7 +80,7 @@ void main() {
     test('delegates requestPermission to service', () async {
       when(() => mockService.requestPermission()).thenAnswer((_) async => true);
 
-      final container = _container();
+      final container = makeContainer();
       addTearDown(container.dispose);
 
       final repo = container.read(locationRepositoryProvider);
@@ -96,7 +95,7 @@ void main() {
         () => mockService.locationStream,
       ).thenAnswer((_) => Stream.value(fix));
 
-      final container = _container();
+      final container = makeContainer();
       addTearDown(container.dispose);
 
       final repo = container.read(locationRepositoryProvider);
