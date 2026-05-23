@@ -82,7 +82,7 @@ void main() {
     ]);
   });
 
-  ProviderContainer _container() {
+  ProviderContainer makeContainer() {
     final c = ProviderContainer(
       overrides: [
         polarH10ServiceProvider.overrideWithValue(mockH10),
@@ -97,7 +97,7 @@ void main() {
 
   group('PolarNotifier initial state', () {
     test('starts with disconnected / relay off', () {
-      final container = _container();
+      final container = makeContainer();
       final state = container.read(polarNotifierProvider);
       expect(state.connectionState, PolarConnectionState.disconnected);
       expect(state.latestBpm, isNull);
@@ -107,7 +107,7 @@ void main() {
 
   group('HR stream updates latestBpm', () {
     test('bpm is reflected in state after HR emission', () async {
-      final container = _container();
+      final container = makeContainer();
       container.read(polarNotifierProvider);
 
       hrCtrl.add(HrData(bpm: 72, timestamp: DateTime.now()));
@@ -119,7 +119,7 @@ void main() {
 
   group('toggleH10Relay', () {
     test('activates all three relays and marks h10RelayActive = true', () {
-      final container = _container();
+      final container = makeContainer();
       container.read(polarNotifierProvider.notifier).toggleH10Relay();
       expect(container.read(polarNotifierProvider).h10RelayActive, isTrue);
       verify(() => mockHrRelay.start(any())).called(1);
@@ -128,7 +128,7 @@ void main() {
     });
 
     test('deactivates all three relays and calls stop() on each', () {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(polarNotifierProvider.notifier);
       notifier.toggleH10Relay();
       notifier.toggleH10Relay();
@@ -143,7 +143,7 @@ void main() {
     test(
       'h10RelayActive cleared and all relays stopped on disconnected event',
       () async {
-        final container = _container();
+        final container = makeContainer();
         final notifier = container.read(polarNotifierProvider.notifier);
 
         notifier.toggleH10Relay();
@@ -167,7 +167,7 @@ void main() {
     test(
       'aggregate relay status stays ok when one stream errors but another is ok',
       () async {
-        final container = _container();
+        final container = makeContainer();
         container.read(polarNotifierProvider.notifier).toggleH10Relay();
 
         hrStatusCtrl.add(RelayPushStatus.ok);
@@ -185,7 +185,7 @@ void main() {
     test(
       'aggregate relay status is error when no H10 stream is healthy',
       () async {
-        final container = _container();
+        final container = makeContainer();
         container.read(polarNotifierProvider.notifier).toggleH10Relay();
 
         ecgStatusCtrl.add(RelayPushStatus.error);
@@ -202,7 +202,7 @@ void main() {
 
   group('disconnect()', () {
     test('stops all relays and delegates to h10.disconnect()', () async {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(polarNotifierProvider.notifier);
 
       notifier.toggleH10Relay();
@@ -219,7 +219,7 @@ void main() {
 
   group('connectAndStartRelay()', () {
     test('starts relay immediately when already connected', () async {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(polarNotifierProvider.notifier);
 
       connCtrl.add(PolarConnectionState.connected);
@@ -237,7 +237,7 @@ void main() {
     test(
       'does not double-start relay if already active and connected',
       () async {
-        final container = _container();
+        final container = makeContainer();
         final notifier = container.read(polarNotifierProvider.notifier);
 
         connCtrl.add(PolarConnectionState.connected);
@@ -253,7 +253,7 @@ void main() {
     test(
       'auto-starts relay when connected event arrives after pending connect',
       () async {
-        final container = _container();
+        final container = makeContainer();
         final notifier = container.read(polarNotifierProvider.notifier);
 
         await notifier.connectAndStartRelay();
@@ -273,7 +273,7 @@ void main() {
     test(
       'pending flag cleared on disconnect — relay does not auto-start',
       () async {
-        final container = _container();
+        final container = makeContainer();
         final notifier = container.read(polarNotifierProvider.notifier);
 
         await notifier.connectAndStartRelay();
@@ -288,7 +288,7 @@ void main() {
 
   group('stopAll()', () {
     test('disconnects and stops all relays', () async {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(polarNotifierProvider.notifier);
 
       notifier.toggleH10Relay();
@@ -301,7 +301,7 @@ void main() {
     test(
       'cancels pending auto-start so relay does not start after disconnect',
       () async {
-        final container = _container();
+        final container = makeContainer();
         final notifier = container.read(polarNotifierProvider.notifier);
 
         await notifier.connectAndStartRelay();

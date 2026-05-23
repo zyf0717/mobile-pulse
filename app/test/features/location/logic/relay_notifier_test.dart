@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:mobile_pulse/features/location/data/location_repository.dart';
 import 'package:mobile_pulse/features/location/logic/location_provider.dart';
 import 'package:mobile_pulse/features/location/logic/relay_provider.dart';
 import 'package:mobile_pulse/features/location/models/location_data.dart';
@@ -50,7 +49,7 @@ void main() {
 
   tearDown(() => statusCtrl.close());
 
-  ProviderContainer _container() {
+  ProviderContainer makeContainer() {
     final c = ProviderContainer(
       overrides: [
         locationServiceProvider.overrideWithValue(mockLocation),
@@ -63,7 +62,7 @@ void main() {
 
   group('RelayNotifier initial state', () {
     test('starts inactive with idle status', () {
-      final container = _container();
+      final container = makeContainer();
       final state = container.read(relayNotifierProvider);
       expect(state.active, isFalse);
       expect(state.status, RelayPushStatus.idle);
@@ -72,7 +71,7 @@ void main() {
 
   group('toggle — activate', () {
     test('sets active = true and calls relay.start()', () {
-      final container = _container();
+      final container = makeContainer();
       container.read(relayNotifierProvider.notifier).toggle();
       expect(container.read(relayNotifierProvider).active, isTrue);
       verify(() => mockRelay.start(any())).called(1);
@@ -81,7 +80,7 @@ void main() {
 
   group('toggle — deactivate', () {
     test('sets active = false and calls relay.stop()', () {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(relayNotifierProvider.notifier);
       notifier.toggle(); // on
       notifier.toggle(); // off
@@ -90,7 +89,7 @@ void main() {
     });
 
     test('status resets to idle after stop', () {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(relayNotifierProvider.notifier);
       notifier.toggle();
       notifier.toggle();
@@ -103,7 +102,7 @@ void main() {
 
   group('relay status stream updates state', () {
     test('ok status from relay is reflected in RelayState', () async {
-      final container = _container();
+      final container = makeContainer();
       container.read(relayNotifierProvider.notifier).toggle();
 
       statusCtrl.add(RelayPushStatus.ok);
@@ -113,7 +112,7 @@ void main() {
     });
 
     test('error status from relay is reflected in RelayState', () async {
-      final container = _container();
+      final container = makeContainer();
       container.read(relayNotifierProvider.notifier).toggle();
 
       statusCtrl.add(RelayPushStatus.error);
@@ -143,14 +142,14 @@ void main() {
 
   group('startIfInactive()', () {
     test('activates when currently inactive', () {
-      final container = _container();
+      final container = makeContainer();
       container.read(relayNotifierProvider.notifier).startIfInactive();
       expect(container.read(relayNotifierProvider).active, isTrue);
       verify(() => mockRelay.start(any())).called(1);
     });
 
     test('is a no-op when already active', () {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(relayNotifierProvider.notifier);
       notifier.startIfInactive(); // activates
       notifier.startIfInactive(); // should do nothing
@@ -160,7 +159,7 @@ void main() {
 
   group('stopIfActive()', () {
     test('deactivates when currently active', () {
-      final container = _container();
+      final container = makeContainer();
       final notifier = container.read(relayNotifierProvider.notifier);
       notifier.toggle(); // activate
       notifier.stopIfActive();
@@ -169,7 +168,7 @@ void main() {
     });
 
     test('is a no-op when already inactive', () {
-      final container = _container();
+      final container = makeContainer();
       container.read(relayNotifierProvider.notifier).stopIfActive();
       expect(container.read(relayNotifierProvider).active, isFalse);
       verifyNever(() => mockRelay.stop());
