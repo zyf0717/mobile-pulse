@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.polar.androidcommunications.api.ble.model.DisInfo
+import com.polar.androidcommunications.api.ble.model.gatt.client.pmd.PmdMeasurementType
 import com.polar.sdk.api.PolarBleApi
 import com.polar.sdk.api.PolarBleApiCallback
 import com.polar.sdk.api.PolarBleApiDefaultImpl
@@ -15,7 +16,13 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import io.reactivex.rxjava3.disposables.Disposable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.time.Instant
 
 // Version-pinned notes for this bridge:
@@ -56,6 +63,7 @@ class PolarPacerChannelHandler(
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connectTimeoutRunnable = Runnable {
         if (connectedIdentifier != null || deviceId.isBlank()) return@Runnable
         emitConnection("error")
@@ -69,12 +77,12 @@ class PolarPacerChannelHandler(
         )
     }
     private val accStartRunnable = Runnable {
-        if (shouldStartAcc && accDisposable == null && onlineStreamingReady) {
+        if (shouldStartAcc && accJob == null && onlineStreamingReady) {
             startAccStream()
         }
     }
     private val ppiStartRunnable = Runnable {
-        if (shouldStartPpi && ppiDisposable == null && onlineStreamingReady) {
+        if (shouldStartPpi && ppiJob == null && onlineStreamingReady) {
             startPpiStream()
         }
     }
@@ -85,8 +93,8 @@ class PolarPacerChannelHandler(
     private var onlineStreamingReady = false
     private var shouldStartAcc = false
     private var shouldStartPpi = false
-    private var accDisposable: Disposable? = null
-    private var ppiDisposable: Disposable? = null
+    private var accJob: Job? = null
+    private var ppiJob: Job? = null
     private var accRetryAttempt = 0
     private var ppiRetryAttempt = 0
 
@@ -230,6 +238,8 @@ class PolarPacerChannelHandler(
     fun dispose() {
         cancelConnectTimeout()
         stopStreams()
+        scope.cancel()
+        api.shutDown()
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
     }
@@ -237,11 +247,11 @@ class PolarPacerChannelHandler(
     private fun startPendingStreams(delayMs: Long = 0L) {
         if (connectedIdentifier == null || !onlineStreamingReady) return
 
-        if (shouldStartAcc && accDisposable == null) {
+        if (shouldStartAcc && accJob == null) {
             scheduleAccStart(delayMs)
         }
 
-        if (shouldStartPpi && ppiDisposable == null) {
+        if (shouldStartPpi && ppiJob == null) {
             schedulePpiStart(delayMs)
         }
     }
@@ -253,8 +263,11 @@ class PolarPacerChannelHandler(
 
     private fun stopAccStream(resetRetryAttempt: Boolean = true) {
         cancelAccStart()
-        accDisposable?.dispose()
-        accDisposable = null
+        accJob?.cancel()
+        accJob = null
+        connectedIdentifier?.let { identifier ->
+            runCatching { api.stopStreaming(identifier, PmdMeasurementType.ACC) }
+        }
         if (resetRetryAttempt) {
             accRetryAttempt = 0
         }
@@ -262,8 +275,11 @@ class PolarPacerChannelHandler(
 
     private fun stopPpiStream(resetRetryAttempt: Boolean = true) {
         cancelPpiStart()
-        ppiDisposable?.dispose()
-        ppiDisposable = null
+        ppiJob?.cancel()
+        ppiJob = null
+        connectedIdentifier?.let { identifier ->
+            runCatching { api.stopStreaming(identifier, PmdMeasurementType.PPI) }
+        }
         if (resetRetryAttempt) {
             ppiRetryAttempt = 0
         }
@@ -280,16 +296,14 @@ class PolarPacerChannelHandler(
 
     private fun startAccStream() {
         val identifier = connectedIdentifier ?: return
-        if (!onlineStreamingReady || !shouldStartAcc || accDisposable != null) return
-        // For 6.15.0 the data type enum is nested under PolarBleApi, not
-        // com.polar.sdk.api.model.*.
-        accDisposable = api.requestStreamSettings(
-            identifier,
-            PolarBleApi.PolarDeviceDataType.ACC,
-        )
-            .flatMapPublisher { settings -> api.startAccStreaming(identifier, settings) }
-            .subscribe(
-                { data ->
+        if (!onlineStreamingReady || !shouldStartAcc || accJob != null) return
+        accJob = scope.launch {
+            try {
+                val settings = api.requestStreamSettings(
+                    identifier,
+                    PolarBleApi.PolarDeviceDataType.ACC,
+                )
+                api.startAccStreaming(identifier, settings).collect { data ->
                     accRetryAttempt = 0
                     emit(
                         mapOf(
@@ -307,28 +321,31 @@ class PolarPacerChannelHandler(
                             "timestamp" to Instant.now().toString(),
                         ),
                     )
-                },
-                { error ->
-                    stopAccStream(resetRetryAttempt = false)
-                    scheduleAccRetry(error.message ?: "ACC stream failed")
-                },
-            )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                stopAccStream(resetRetryAttempt = false)
+                scheduleAccRetry(error.message ?: "ACC stream failed")
+            } finally {
+                if (accJob?.isCancelled != false) {
+                    accJob = null
+                }
+            }
+        }
     }
 
     private fun startPpiStream() {
         val identifier = connectedIdentifier ?: return
-        if (!onlineStreamingReady || !shouldStartPpi || ppiDisposable != null) return
-        ppiDisposable = api.startPpiStreaming(identifier)
-            .subscribe(
-                { data: PolarPpiData ->
+        if (!onlineStreamingReady || !shouldStartPpi || ppiJob != null) return
+        ppiJob = scope.launch {
+            try {
+                api.startPpiStreaming(identifier).collect { data: PolarPpiData ->
                     ppiRetryAttempt = 0
                     emit(
                         mapOf(
                             "type" to "ppi",
                             "samples" to data.samples.map { sample ->
-                                // In the 6.15.0 AAR the Kotlin properties are
-                                // ppi/errorEstimate and the contact/blocker
-                                // flags are booleans already.
                                 mapOf(
                                     "ppi_ms" to sample.ppi.toInt(),
                                     "error_estimate_ms" to sample.errorEstimate.toInt(),
@@ -342,23 +359,29 @@ class PolarPacerChannelHandler(
                             "timestamp" to Instant.now().toString(),
                         ),
                     )
-                },
-                { error ->
-                    stopPpiStream(resetRetryAttempt = false)
-                    schedulePpiRetry(error.message ?: "PPI stream failed")
-                },
-            )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                stopPpiStream(resetRetryAttempt = false)
+                schedulePpiRetry(error.message ?: "PPI stream failed")
+            } finally {
+                if (ppiJob?.isCancelled != false) {
+                    ppiJob = null
+                }
+            }
+        }
     }
 
     private fun scheduleAccStart(delayMs: Long) {
         cancelAccStart()
-        if (!shouldStartAcc || accDisposable != null || !onlineStreamingReady) return
+        if (!shouldStartAcc || accJob != null || !onlineStreamingReady) return
         mainHandler.postDelayed(accStartRunnable, delayMs)
     }
 
     private fun schedulePpiStart(delayMs: Long) {
         cancelPpiStart()
-        if (!shouldStartPpi || ppiDisposable != null || !onlineStreamingReady) return
+        if (!shouldStartPpi || ppiJob != null || !onlineStreamingReady) return
         mainHandler.postDelayed(ppiStartRunnable, delayMs)
     }
 

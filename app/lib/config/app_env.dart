@@ -9,6 +9,7 @@ class AppEnvKeys {
   static const relayPacerAccUrl = 'RELAY_PACER_ACC_URL';
   static const relayPacerPpiUrl = 'RELAY_PACER_PPI_URL';
   static const polarPacerDeviceId = 'POLAR_PACER_DEVICE_ID';
+  static const polarLoopDeviceId = 'POLAR_LOOP_DEVICE_ID';
 }
 
 class AppEnv {
@@ -35,5 +36,8 @@ class AppEnv {
   );
   static const polarPacerDeviceId = String.fromEnvironment(
     AppEnvKeys.polarPacerDeviceId,
+  );
+  static const polarLoopDeviceId = String.fromEnvironment(
+    AppEnvKeys.polarLoopDeviceId,
   );
 }
