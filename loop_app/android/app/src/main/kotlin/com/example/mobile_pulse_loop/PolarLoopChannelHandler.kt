@@ -1,7 +1,10 @@
 package com.example.mobile_pulse_loop
 
+import android.content.ContentValues
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
+import android.provider.MediaStore
 import com.polar.sdk.api.PolarBleApi
 import com.polar.sdk.api.model.PolarAccelerometerData
 import com.polar.sdk.api.model.PolarHrData
@@ -262,10 +265,6 @@ class PolarLoopChannelHandler(
                     identifier,
                     PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
                 )
-                requireFeatureReady(
-                    identifier,
-                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_FILE_TRANSFER,
-                )
                 val path = call.argument<String>("path")
                     ?: throw IllegalArgumentException("path is required")
                 val entry = resolveEntry(identifier, path)
@@ -291,6 +290,26 @@ class PolarLoopChannelHandler(
                 api.removeOfflineRecord(identifier, entry)
                 offlineEntryCache.remove(path)
                 downloadCache.remove(path)
+                null
+            }
+
+            "deleteAllOfflineRecords" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
+                )
+                val entries = api.listOfflineRecordings(identifier).toList()
+                entries.forEach { entry ->
+                    api.removeOfflineRecord(identifier, entry)
+                    offlineEntryCache.remove(entry.path)
+                    downloadCache.remove(entry.path)
+                }
+                entries.size
+            }
+
+            "clearDownloadedRecords" -> launchMethod(result) {
+                downloadCache.clear()
                 null
             }
 
@@ -377,15 +396,22 @@ class PolarLoopChannelHandler(
         entry: PolarOfflineRecordingEntry,
         cachedDownload: CachedDownload,
     ): Map<String, Any?> {
-        val exportDir = exportDirectoryForEntry(entry)
+        val exportDir = privateExportDirectoryForEntry(entry)
         if (!exportDir.exists()) {
             exportDir.mkdirs()
         }
 
-        val rawFile = rawExportFile(entry)
-        val summaryFile = summaryExportFile(entry)
-        val rawBytes = api.getFile(identifier, entry.path)
-        rawFile.writeBytes(rawBytes)
+        val rawFile = privateRawExportFile(entry)
+        val summaryFile = privateSummaryExportFile(entry)
+        val exportedPayload = linkedMapOf<String, Any?>(
+            "entry" to recordingEntryPayload(entry),
+            "downloaded_at" to cachedDownload.downloadedAt.toString(),
+            "settings" to cachedDownload.data.settings?.let(::selectedSensorSettingsPayload),
+            "summary" to cachedDownload.summary,
+            "data" to offlineRecordingDataPayload(cachedDownload.data),
+        )
+        val exportedJson = JSONObject(exportedPayload).toString(2)
+        rawFile.writeText(exportedJson)
 
         val summaryPayload = linkedMapOf<String, Any?>(
             "entry" to recordingEntryPayload(entry),
@@ -395,17 +421,33 @@ class PolarLoopChannelHandler(
             "source_device_id" to identifier,
             "source_path" to entry.path,
         )
-        summaryFile.writeText(JSONObject(summaryPayload).toString(2))
+        val summaryJson = JSONObject(summaryPayload).toString(2)
+        summaryFile.writeText(summaryJson)
 
         if (!rawFile.isFile || !summaryFile.isFile) {
             throw IllegalStateException("Export verification failed for ${entry.path}")
         }
 
+        val publicRawFilePath = writePublicExportFile(
+            entry = entry,
+            fileName = rawFile.name,
+            mimeType = "application/json",
+            content = exportedJson,
+        )
+        val publicSummaryFilePath = writePublicExportFile(
+            entry = entry,
+            fileName = summaryFile.name,
+            mimeType = "application/json",
+            content = summaryJson,
+        )
+
         return linkedMapOf(
             "entry" to recordingEntryPayload(entry),
             "exported_at" to summaryPayload["exported_at"],
-            "raw_file_path" to rawFile.absolutePath,
-            "summary_file_path" to summaryFile.absolutePath,
+            "raw_file_path" to publicRawFilePath,
+            "summary_file_path" to publicSummaryFilePath,
+            "share_raw_file_path" to rawFile.absolutePath,
+            "share_summary_file_path" to summaryFile.absolutePath,
             "summary" to cachedDownload.summary,
         )
     }
@@ -665,25 +707,88 @@ class PolarLoopChannelHandler(
         mainHandler.removeCallbacks(connectTimeoutRunnable)
     }
 
-    private fun exportDirectoryForEntry(entry: PolarOfflineRecordingEntry): File {
+    private fun privateExportDirectoryForEntry(entry: PolarOfflineRecordingEntry): File {
         val root = File(appContext.filesDir, "polar_loop/exports/${sanitizeFileName(deviceId)}")
-        val baseName = sanitizeFileName(entry.path.substringAfterLast('/').ifBlank { "recording" })
-        val digest = sha256(entry.path).take(12)
-        return File(root, "${baseName}_$digest")
+        return File(root, exportFolderName(entry))
     }
 
-    private fun rawExportFile(entry: PolarOfflineRecordingEntry): File {
-        val directory = exportDirectoryForEntry(entry)
+    private fun privateRawExportFile(entry: PolarOfflineRecordingEntry): File {
+        val directory = privateExportDirectoryForEntry(entry)
         val baseName = sanitizeFileName(entry.path.substringAfterLast('/').ifBlank { "recording.raw" })
-        return File(directory, baseName)
+        val fileName = if (baseName.contains('.')) {
+            "${baseName.substringBeforeLast('.')}.json"
+        } else {
+            "$baseName.json"
+        }
+        return File(directory, fileName)
     }
 
-    private fun summaryExportFile(entry: PolarOfflineRecordingEntry): File {
-        return File(exportDirectoryForEntry(entry), "summary.json")
+    private fun privateSummaryExportFile(entry: PolarOfflineRecordingEntry): File {
+        return File(privateExportDirectoryForEntry(entry), "summary.json")
     }
 
     private fun isExportConfirmed(entry: PolarOfflineRecordingEntry): Boolean {
-        return rawExportFile(entry).isFile && summaryExportFile(entry).isFile
+        return privateRawExportFile(entry).isFile && privateSummaryExportFile(entry).isFile
+    }
+
+    private fun exportFolderName(entry: PolarOfflineRecordingEntry): String {
+        val baseName = sanitizeFileName(entry.path.substringAfterLast('/').ifBlank { "recording" })
+        val digest = sha256(entry.path).take(12)
+        return "${baseName}_$digest"
+    }
+
+    private fun publicExportRelativePath(entry: PolarOfflineRecordingEntry): String {
+        return "${Environment.DIRECTORY_DOWNLOADS}/Polar Loop/${sanitizeFileName(deviceId)}/${exportFolderName(entry)}/"
+    }
+
+    private fun publicExportFilePath(entry: PolarOfflineRecordingEntry, fileName: String): String {
+        val downloadsRoot = Environment.getExternalStoragePublicDirectory(
+            Environment.DIRECTORY_DOWNLOADS,
+        )
+        return File(
+            downloadsRoot,
+            "Polar Loop/${sanitizeFileName(deviceId)}/${exportFolderName(entry)}/$fileName",
+        ).absolutePath
+    }
+
+    private fun writePublicExportFile(
+        entry: PolarOfflineRecordingEntry,
+        fileName: String,
+        mimeType: String,
+        content: String,
+    ): String {
+        val resolver = appContext.contentResolver
+        val relativePath = publicExportRelativePath(entry)
+        deletePublicExportFile(relativePath, fileName)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Unable to create public export for $fileName")
+        try {
+            resolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8).use { writer ->
+                writer?.write(content)
+                    ?: throw IllegalStateException("Unable to open public export stream for $fileName")
+            }
+            val publishedValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(uri, publishedValues, null, null)
+        } catch (error: Throwable) {
+            resolver.delete(uri, null, null)
+            throw error
+        }
+        return publicExportFilePath(entry, fileName)
+    }
+
+    private fun deletePublicExportFile(relativePath: String, fileName: String) {
+        val resolver = appContext.contentResolver
+        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+        val selectionArgs = arrayOf(relativePath, fileName)
+        resolver.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI, selection, selectionArgs)
     }
 
     private fun sha256(value: String): String {
@@ -730,6 +835,103 @@ class PolarLoopChannelHandler(
             error.javaClass.simpleName == "PolarOperationNotSupported" ->
                 "Polar Loop operation is not supported for the selected item or current device state. Refresh recordings and try again."
             else -> message
+        }
+    }
+
+    private fun offlineRecordingDataPayload(data: PolarOfflineRecordingData): Map<String, Any?> {
+        return when (data) {
+            is PolarOfflineRecordingData.AccOfflineRecording -> linkedMapOf(
+                "kind" to "ACC",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp,
+                        "x" to sample.x,
+                        "y" to sample.y,
+                        "z" to sample.z,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.GyroOfflineRecording -> linkedMapOf(
+                "kind" to "GYRO",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp,
+                        "x" to sample.x,
+                        "y" to sample.y,
+                        "z" to sample.z,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.MagOfflineRecording -> linkedMapOf(
+                "kind" to "MAGNETOMETER",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp,
+                        "x" to sample.x,
+                        "y" to sample.y,
+                        "z" to sample.z,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.PpgOfflineRecording -> linkedMapOf(
+                "kind" to "PPG",
+                "ppg_type" to data.data.type.name,
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp,
+                        "channel_samples" to sample.channelSamples,
+                        "status_bits" to sample.statusBits,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.PpiOfflineRecording -> linkedMapOf(
+                "kind" to "PPI",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp.toLong(),
+                        "ppi_ms" to sample.ppi,
+                        "error_estimate_ms" to sample.errorEstimate,
+                        "hr" to sample.hr,
+                        "blocker_bit" to sample.blockerBit,
+                        "skin_contact_status" to sample.skinContactStatus,
+                        "skin_contact_supported" to sample.skinContactSupported,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.HrOfflineRecording -> linkedMapOf(
+                "kind" to "HR",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "hr" to sample.hr,
+                        "rr_ms" to sample.rrsMs,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.TemperatureOfflineRecording -> linkedMapOf(
+                "kind" to "TEMPERATURE",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp,
+                        "temperature_c" to sample.temperature,
+                    )
+                },
+            )
+
+            is PolarOfflineRecordingData.SkinTemperatureOfflineRecording -> linkedMapOf(
+                "kind" to "SKIN_TEMPERATURE",
+                "samples" to data.data.samples.map { sample ->
+                    linkedMapOf(
+                        "timestamp_ns" to sample.timeStamp,
+                        "temperature_c" to sample.temperature,
+                    )
+                },
+            )
         }
     }
 

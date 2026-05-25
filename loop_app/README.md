@@ -20,3 +20,10 @@ flutter analyze
 flutter run --dart-define-from-file=dart_defines.env
 flutter build apk --dart-define-from-file=dart_defines.env
 ```
+
+## Exports
+
+Loop exports are saved into Android `Downloads/Polar Loop/...` so they are user-visible. The app also exposes:
+
+- `Export Files` to save the data file and `summary.json`
+- `Export & Share` to save them and immediately open the system share sheet

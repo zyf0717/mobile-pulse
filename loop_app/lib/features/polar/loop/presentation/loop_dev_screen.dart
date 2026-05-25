@@ -269,12 +269,32 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
               ),
               _SectionCard(
                 title: 'Offline Recordings',
-                trailing: FilledButton(
-                  key: const ValueKey('loop-list-recordings-button'),
-                  onPressed: isConnected
-                      ? notifier.listOfflineRecordings
-                      : null,
-                  child: const Text('List Recordings'),
+                trailing: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton(
+                      key: const ValueKey('loop-list-recordings-button'),
+                      onPressed: isConnected
+                          ? notifier.listOfflineRecordings
+                          : null,
+                      child: const Text('List Recordings'),
+                    ),
+                    OutlinedButton(
+                      key: const ValueKey('loop-clear-loop-recordings-button'),
+                      onPressed: isConnected && state.recordings.isNotEmpty
+                          ? () => _confirmDeleteAllFromLoop(
+                              notifier: notifier,
+                              recordingCount: state.recordings.length,
+                            )
+                          : null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                      child: const Text('Clear Loop'),
+                    ),
+                  ],
                 ),
                 children: [
                   if (state.recordings.isEmpty)
@@ -292,6 +312,12 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
                                 path: entry.path,
                               )
                             : null,
+                        onExportAndShare: isConnected
+                            ? () => _exportAndShareOfflineRecord(
+                                notifier: notifier,
+                                path: entry.path,
+                              )
+                            : null,
                         onDelete: isConnected && entry.exportConfirmed
                             ? () => _confirmDeleteFromLoop(
                                 notifier: notifier,
@@ -305,6 +331,15 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
               ),
               _SectionCard(
                 title: 'Transfer & Export State',
+                trailing: OutlinedButton(
+                  key: const ValueKey('loop-clear-downloaded-records-button'),
+                  onPressed:
+                      state.downloadsByPath.isNotEmpty ||
+                          state.downloadProgressByPath.isNotEmpty
+                      ? () => _confirmClearDownloadedRecords(notifier)
+                      : null,
+                  child: const Text('Clear Downloads'),
+                ),
                 children: [
                   _ProgressPanel(progressByPath: state.downloadProgressByPath),
                   const SizedBox(height: 12),
@@ -382,20 +417,31 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
     final record = await notifier.exportOfflineRecord(path);
     if (!mounted || record == null) return;
     _showMessage(
-      'Exported ${record.entry.dataType.wireName}. Use Share to send the raw file and summary.',
+      'Exported ${record.entry.dataType.wireName} to Downloads/Polar Loop.',
     );
   }
 
+  Future<void> _exportAndShareOfflineRecord({
+    required LoopNotifier notifier,
+    required String path,
+  }) async {
+    final record = await notifier.exportOfflineRecord(path);
+    if (!mounted || record == null) return;
+    await _shareExportedRecord(record);
+  }
+
   Future<void> _shareExportedRecord(LoopExportedRecord record) async {
-    final rawFile = File(record.rawFilePath);
-    final summaryFile = File(record.summaryFilePath);
+    final rawFile = File(record.shareRawFilePath);
+    final summaryFile = File(record.shareSummaryFilePath);
     final files = <XFile>[];
 
     if (await rawFile.exists()) {
-      files.add(XFile(rawFile.path));
+      files.add(XFile(rawFile.path, name: rawFile.uri.pathSegments.last));
     }
     if (await summaryFile.exists()) {
-      files.add(XFile(summaryFile.path));
+      files.add(
+        XFile(summaryFile.path, name: summaryFile.uri.pathSegments.last),
+      );
     }
 
     if (!mounted) return;
@@ -447,6 +493,69 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
     await notifier.deleteOfflineRecord(entry.path);
     if (!mounted) return;
     _showMessage('Deleted ${entry.dataType.wireName} recording from the Loop.');
+  }
+
+  Future<void> _confirmDeleteAllFromLoop({
+    required LoopNotifier notifier,
+    required int recordingCount,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Clear Loop Recordings'),
+          content: Text(
+            'Delete all $recordingCount recording(s) from the Loop device?\n\n'
+            'This does not remove exported files already saved on the phone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete All'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+    final deletedCount = await notifier.deleteAllOfflineRecords();
+    if (!mounted || deletedCount == null) return;
+    _showMessage('Deleted $deletedCount recording(s) from the Loop.');
+  }
+
+  Future<void> _confirmClearDownloadedRecords(LoopNotifier notifier) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Clear Downloaded Records'),
+          content: const Text(
+            'Clear downloaded records and transfer progress from this app?\n\n'
+            'Exported files already saved on the phone will remain available.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Clear'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+    await notifier.clearDownloadedRecords();
+    if (!mounted) return;
+    _showMessage('Cleared downloaded records from the app.');
   }
 
   void _showMessage(String message) {
@@ -717,12 +826,14 @@ class _RecordingCard extends StatelessWidget {
   final LoopOfflineRecordingEntry entry;
   final VoidCallback? onDownload;
   final VoidCallback? onExport;
+  final VoidCallback? onExportAndShare;
   final VoidCallback? onDelete;
 
   const _RecordingCard({
     required this.entry,
     required this.onDownload,
     required this.onExport,
+    required this.onExportAndShare,
     required this.onDelete,
   });
 
@@ -764,6 +875,11 @@ class _RecordingCard extends StatelessWidget {
                   key: ValueKey('loop-recording-${entry.path}-export'),
                   onPressed: onExport,
                   child: const Text('Export Files'),
+                ),
+                FilledButton.tonal(
+                  key: ValueKey('loop-recording-${entry.path}-export-share'),
+                  onPressed: onExportAndShare,
+                  child: const Text('Export & Share'),
                 ),
                 OutlinedButton(
                   key: ValueKey('loop-recording-${entry.path}-delete'),
@@ -919,7 +1035,7 @@ class _ExportedRecordPanel extends StatelessWidget {
                   label: 'Exported',
                   value: record.exportedAt.toString(),
                 ),
-                _InfoRow(label: 'Raw file', value: record.rawFilePath),
+                _InfoRow(label: 'Data file', value: record.rawFilePath),
                 _InfoRow(label: 'Summary file', value: record.summaryFilePath),
               ],
               actions: [

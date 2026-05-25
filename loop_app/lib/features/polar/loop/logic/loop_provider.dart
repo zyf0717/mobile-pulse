@@ -276,6 +276,33 @@ class LoopNotifier extends Notifier<LoopState> {
     });
   }
 
+  Future<int?> deleteAllOfflineRecords() async {
+    return _runWithValue(() async {
+      final deletedCount = await ref
+          .read(polarLoopServiceProvider)
+          .deleteAllOfflineRecords();
+      state = state.copyWith(
+        recordings: const [],
+        downloadsByPath: const {},
+        downloadProgressByPath: const {},
+        clearLastError: true,
+      );
+      await listOfflineRecordings();
+      return deletedCount;
+    });
+  }
+
+  Future<void> clearDownloadedRecords() async {
+    await _run(() async {
+      await ref.read(polarLoopServiceProvider).clearDownloadedRecords();
+      state = state.copyWith(
+        downloadsByPath: const {},
+        downloadProgressByPath: const {},
+        clearLastError: true,
+      );
+    });
+  }
+
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();

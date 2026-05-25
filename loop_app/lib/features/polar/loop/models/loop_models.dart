@@ -187,6 +187,8 @@ class LoopExportedRecord {
   final DateTime exportedAt;
   final String rawFilePath;
   final String summaryFilePath;
+  final String shareRawFilePath;
+  final String shareSummaryFilePath;
   final LoopOfflineRecordSummary summary;
 
   const LoopExportedRecord({
@@ -194,6 +196,8 @@ class LoopExportedRecord {
     required this.exportedAt,
     required this.rawFilePath,
     required this.summaryFilePath,
+    required this.shareRawFilePath,
+    required this.shareSummaryFilePath,
     required this.summary,
   });
 
@@ -205,6 +209,12 @@ class LoopExportedRecord {
       exportedAt: DateTime.parse(map['exported_at'] as String),
       rawFilePath: map['raw_file_path'] as String,
       summaryFilePath: map['summary_file_path'] as String,
+      shareRawFilePath:
+          map['share_raw_file_path'] as String? ??
+          map['raw_file_path'] as String,
+      shareSummaryFilePath:
+          map['share_summary_file_path'] as String? ??
+          map['summary_file_path'] as String,
       summary: LoopOfflineRecordSummary.fromMap(
         Map<dynamic, dynamic>.from(map['summary'] as Map<dynamic, dynamic>),
       ),

@@ -188,6 +188,17 @@ class PolarLoopService {
     });
   }
 
+  Future<int> deleteAllOfflineRecords() async {
+    final deletedCount = await _methodChannel.invokeMethod<int>(
+      'deleteAllOfflineRecords',
+    );
+    return deletedCount ?? 0;
+  }
+
+  Future<void> clearDownloadedRecords() {
+    return _methodChannel.invokeMethod<void>('clearDownloadedRecords');
+  }
+
   void dispose() {
     _eventSubscription?.cancel();
     _connectionController.close();
