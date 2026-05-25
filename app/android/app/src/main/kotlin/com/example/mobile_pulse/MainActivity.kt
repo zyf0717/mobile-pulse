@@ -16,6 +16,7 @@ class MainActivity : FlutterActivity() {
 
     private var polarPacerChannelHandler: PolarPacerChannelHandler? = null
     private var polarLoopChannelHandler: PolarLoopChannelHandler? = null
+    private var sharedPolarBleApi: SharedPolarBleApi? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -26,12 +27,13 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        sharedPolarBleApi = SharedPolarBleApi(applicationContext)
         polarPacerChannelHandler = PolarPacerChannelHandler(
-            context = applicationContext,
+            sharedPolarBleApi = sharedPolarBleApi!!,
             messenger = flutterEngine.dartExecutor.binaryMessenger,
         )
         polarLoopChannelHandler = PolarLoopChannelHandler(
-            context = applicationContext,
+            sharedPolarBleApi = sharedPolarBleApi!!,
             messenger = flutterEngine.dartExecutor.binaryMessenger,
         )
     }
@@ -41,6 +43,8 @@ class MainActivity : FlutterActivity() {
         polarPacerChannelHandler = null
         polarLoopChannelHandler?.dispose()
         polarLoopChannelHandler = null
+        sharedPolarBleApi?.shutDown()
+        sharedPolarBleApi = null
         super.onDestroy()
     }
 

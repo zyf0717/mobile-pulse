@@ -16,7 +16,7 @@ Copy `dart_defines.env.example` to `dart_defines.env` and fill in device IDs and
 ## Commands
 
 ```sh
-# Connect tailscale device if applicable
+# Connect tailscale device if applicable; port depends on android device, may not be 5555
 adb tcpip 5555
 adb connect 100.81.55.124:5555
 
@@ -35,4 +35,3 @@ flutter run --dart-define-from-file=dart_defines.env
 # Build APK
 flutter build apk --dart-define-from-file=dart_defines.env
 ```
-

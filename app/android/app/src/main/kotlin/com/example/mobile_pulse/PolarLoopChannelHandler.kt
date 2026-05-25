@@ -1,14 +1,9 @@
 package com.example.mobile_pulse
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import com.polar.androidcommunications.api.ble.model.DisInfo
 import com.polar.sdk.api.PolarBleApi
-import com.polar.sdk.api.PolarBleApiCallback
-import com.polar.sdk.api.PolarBleApiDefaultImpl
 import com.polar.sdk.api.model.PolarAccelerometerData
-import com.polar.sdk.api.model.PolarHealthThermometerData
 import com.polar.sdk.api.model.PolarHrData
 import com.polar.sdk.api.model.PolarOfflineRecordingData
 import com.polar.sdk.api.model.PolarOfflineRecordingEntry
@@ -37,7 +32,7 @@ import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 
 class PolarLoopChannelHandler(
-    context: Context,
+    sharedPolarBleApi: SharedPolarBleApi,
     messenger: BinaryMessenger,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
 
@@ -54,17 +49,9 @@ class PolarLoopChannelHandler(
         val summary: Map<String, Any?>,
     )
 
-    private val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
-        context.applicationContext,
-        setOf(
-            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_TIME_SETUP,
-            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
-            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_FILE_TRANSFER,
-            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
-        ),
-    )
-
-    private val appContext = context.applicationContext
+    private val sharedApi = sharedPolarBleApi
+    private val api: PolarBleApi = sharedApi.api
+    private val appContext = sharedApi.appContext
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -84,54 +71,44 @@ class PolarLoopChannelHandler(
     private val readyFeatures = mutableSetOf<PolarBleApi.PolarBleSdkFeature>()
     private val offlineEntryCache = mutableMapOf<String, PolarOfflineRecordingEntry>()
     private val downloadCache = mutableMapOf<String, CachedDownload>()
+    private val apiListener = object : SharedPolarBleApi.Listener {
+        override fun deviceConnecting(polarDeviceInfo: com.polar.sdk.api.model.PolarDeviceInfo) {
+            if (!matches(polarDeviceInfo.deviceId)) return
+            cancelConnectTimeout()
+            emitConnection("connecting")
+        }
+
+        override fun deviceConnected(polarDeviceInfo: com.polar.sdk.api.model.PolarDeviceInfo) {
+            if (!matches(polarDeviceInfo.deviceId)) return
+            cancelConnectTimeout()
+            connectedIdentifier = polarDeviceInfo.deviceId
+            emitConnection("connected")
+        }
+
+        override fun deviceDisconnected(polarDeviceInfo: com.polar.sdk.api.model.PolarDeviceInfo) {
+            if (!matches(polarDeviceInfo.deviceId)) return
+            cancelConnectTimeout()
+            connectedIdentifier = null
+            readyFeatures.clear()
+            offlineEntryCache.clear()
+            downloadCache.clear()
+            emitConnection("disconnected")
+        }
+
+        override fun bleSdkFeatureReady(
+            identifier: String,
+            feature: PolarBleApi.PolarBleSdkFeature,
+        ) {
+            if (!matches(identifier)) return
+            connectedIdentifier = identifier
+            readyFeatures.add(feature)
+        }
+    }
 
     init {
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(this)
-        api.setApiCallback(object : PolarBleApiCallback() {
-            override fun deviceConnecting(polarDeviceInfo: com.polar.sdk.api.model.PolarDeviceInfo) {
-                if (!matches(polarDeviceInfo.deviceId)) return
-                cancelConnectTimeout()
-                emitConnection("connecting")
-            }
-
-            override fun deviceConnected(polarDeviceInfo: com.polar.sdk.api.model.PolarDeviceInfo) {
-                if (!matches(polarDeviceInfo.deviceId)) return
-                cancelConnectTimeout()
-                connectedIdentifier = polarDeviceInfo.deviceId
-                emitConnection("connected")
-            }
-
-            override fun deviceDisconnected(polarDeviceInfo: com.polar.sdk.api.model.PolarDeviceInfo) {
-                if (!matches(polarDeviceInfo.deviceId)) return
-                cancelConnectTimeout()
-                connectedIdentifier = null
-                readyFeatures.clear()
-                offlineEntryCache.clear()
-                downloadCache.clear()
-                emitConnection("disconnected")
-            }
-
-            override fun bleSdkFeatureReady(
-                identifier: String,
-                feature: PolarBleApi.PolarBleSdkFeature,
-            ) {
-                if (!matches(identifier)) return
-                connectedIdentifier = identifier
-                readyFeatures.add(feature)
-            }
-
-            override fun disInformationReceived(identifier: String, disInfo: DisInfo) {
-                // Not used.
-            }
-
-            override fun htsNotificationReceived(
-                identifier: String,
-                data: PolarHealthThermometerData,
-            ) {
-                // Not used.
-            }
-        })
+        sharedApi.addListener(apiListener)
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -324,7 +301,7 @@ class PolarLoopChannelHandler(
     fun dispose() {
         cancelConnectTimeout()
         scope.cancel()
-        api.shutDown()
+        sharedApi.removeListener(apiListener)
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
     }
