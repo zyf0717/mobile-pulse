@@ -73,14 +73,15 @@ class LoopNotifier extends Notifier<LoopState> {
     final loop = ref.watch(polarLoopServiceProvider);
 
     final connSub = loop.connectionState.listen((connectionState) {
-      final isConnected =
-          connectionState == PolarConnectionState.connected;
+      final isConnected = connectionState == PolarConnectionState.connected;
       state = state.copyWith(
         connectionState: connectionState,
-        activeOfflineRecordingTypes:
-            isConnected ? state.activeOfflineRecordingTypes : const {},
-        downloadProgressByPath:
-            isConnected ? state.downloadProgressByPath : const {},
+        activeOfflineRecordingTypes: isConnected
+            ? state.activeOfflineRecordingTypes
+            : const {},
+        downloadProgressByPath: isConnected
+            ? state.downloadProgressByPath
+            : const {},
         recordings: isConnected ? state.recordings : const [],
         downloadsByPath: isConnected ? state.downloadsByPath : const {},
       );
