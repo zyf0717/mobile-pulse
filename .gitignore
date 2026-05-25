@@ -20,6 +20,7 @@ app/.packages
 app/build/
 app/flutter_*.png
 app/dart_defines.env
+loop_app/dart_defines.env
 
 # --- Android ---
 app/android/.gradle/
@@ -27,6 +28,7 @@ app/android/.kotlin/
 app/android/local.properties
 app/android/key.properties
 app/android/captures/
+loop_app/android/local.properties
 *.jks
 *.keystore
 

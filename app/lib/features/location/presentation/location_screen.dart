@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +7,6 @@ import '../models/location_data.dart';
 import '../../pulse/logic/pulse_provider.dart';
 import '../../polar/common/models/polar_connection_state.dart';
 import '../../polar/h10/logic/polar_provider.dart';
-import '../../polar/loop/presentation/loop_dev_screen.dart';
 import '../../polar/pacer/logic/pacer_provider.dart';
 import '../../../services/relay_push_service.dart';
 
@@ -21,33 +19,14 @@ const int _gpsPanelFlex = 3;
 const int _controlsPanelFlex = 4;
 
 class LocationScreen extends ConsumerWidget {
-  final bool showLoopDevEntry;
-
-  const LocationScreen({super.key, this.showLoopDevEntry = kDebugMode});
+  const LocationScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locationAsync = ref.watch(locationStreamProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mobile Pulse'),
-        actions: [
-          if (showLoopDevEntry)
-            IconButton(
-              key: const ValueKey('open-loop-dev-page'),
-              tooltip: 'Loop Dev',
-              icon: const Icon(Icons.developer_mode_outlined),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const LoopDevScreen(),
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Mobile Pulse')),
       body: Column(
         children: [
           Expanded(

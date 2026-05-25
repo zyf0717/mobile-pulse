@@ -1,4 +1,4 @@
-package com.example.mobile_pulse
+package com.example.mobile_pulse_loop
 
 import android.content.Context
 import com.polar.androidcommunications.api.ble.model.DisInfo
@@ -36,8 +36,10 @@ class SharedPolarBleApi(context: Context) {
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
         appContext,
         setOf(
-            PolarBleApi.PolarBleSdkFeature.FEATURE_HR,
-            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_TIME_SETUP,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_FILE_TRANSFER,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
         ),
     )
 
