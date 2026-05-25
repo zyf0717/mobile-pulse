@@ -127,6 +127,7 @@ class _MobilePulseAppState extends ConsumerState<MobilePulseApp>
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      title: 'Polar Streams',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
       home: const LocationScreen(),
     );

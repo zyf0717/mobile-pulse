@@ -26,7 +26,7 @@ class LocationScreen extends ConsumerWidget {
     final locationAsync = ref.watch(locationStreamProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mobile Pulse')),
+      appBar: AppBar(title: const Text('Polar Streams')),
       body: Column(
         children: [
           Expanded(

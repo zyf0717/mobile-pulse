@@ -1,4 +1,4 @@
-# mobile_pulse
+# Polar Streams
 
 Flutter app that streams sensor data from a Polar H10 and a Polar Pacer to a relay server, alongside GPS and pulse-oximeter streams.
 
