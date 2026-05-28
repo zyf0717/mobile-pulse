@@ -92,6 +92,63 @@ class PolarLoopService {
     return LoopDeviceTime.fromMap(result ?? const {});
   }
 
+  Future<LoopSdkModeStatus> getSdkModeStatus() async {
+    final result = await _methodChannel.invokeMapMethod<String, dynamic>(
+      'getSdkModeStatus',
+    );
+    return LoopSdkModeStatus.fromMap(result ?? const {});
+  }
+
+  Future<LoopSdkModeStatus> setSdkModeEnabled(bool enabled) async {
+    final result = await _methodChannel.invokeMapMethod<String, dynamic>(
+      'setSdkModeEnabled',
+      {'enabled': enabled},
+    );
+    return LoopSdkModeStatus.fromMap(result ?? const {});
+  }
+
+  Future<Map<String, Object?>> getDiskSpace() async {
+    final result = await _methodChannel.invokeMapMethod<String, dynamic>(
+      'getDiskSpace',
+    );
+    return _deepCastMap(result ?? const {});
+  }
+
+  Future<Map<String, Object?>> getUserDeviceSettings() async {
+    final result = await _methodChannel.invokeMapMethod<String, dynamic>(
+      'getUserDeviceSettings',
+    );
+    return _deepCastMap(result ?? const {});
+  }
+
+  Future<LoopBackendSyncPayload> buildSyncPayload({
+    required DateTime fromDate,
+    required DateTime toDate,
+    required List<String> recordingPaths,
+  }) async {
+    final result = await _methodChannel
+        .invokeMapMethod<String, dynamic>('buildSyncPayload', {
+          'fromDate': _dateOnly(fromDate),
+          'toDate': _dateOnly(toDate),
+          'recordingPaths': recordingPaths,
+        });
+    return LoopBackendSyncPayload.fromMap(result ?? const {});
+  }
+
+  Future<LoopSnapshotExport> exportNormalModeSnapshot({
+    required DateTime fromDate,
+    required DateTime toDate,
+    List<String>? recordingPaths,
+  }) async {
+    final result = await _methodChannel
+        .invokeMapMethod<String, dynamic>('exportNormalModeSnapshot', {
+          'fromDate': _dateOnly(fromDate),
+          'toDate': _dateOnly(toDate),
+          'recordingPaths': recordingPaths ?? const <String>[],
+        });
+    return LoopSnapshotExport.fromMap(result ?? const {});
+  }
+
   Future<Set<LoopOfflineDataType>> getAvailableOfflineDataTypes() async {
     final result = await _methodChannel.invokeListMethod<String>(
       'getAvailableOfflineDataTypes',
@@ -247,5 +304,28 @@ class PolarLoopService {
     AppLogger.log('Polar/Loop', code == null ? message : '$code: $message');
     if (_errorController.isClosed) return;
     _errorController.add(PolarLoopError(message: message, code: code));
+  }
+
+  String _dateOnly(DateTime dateTime) {
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final day = dateTime.day.toString().padLeft(2, '0');
+    return '${dateTime.year}-$month-$day';
+  }
+
+  Map<String, Object?> _deepCastMap(Map<dynamic, dynamic> source) {
+    return {
+      for (final entry in source.entries)
+        entry.key.toString(): _deepCastValue(entry.value),
+    };
+  }
+
+  Object? _deepCastValue(Object? value) {
+    if (value is Map) {
+      return _deepCastMap(Map<dynamic, dynamic>.from(value));
+    }
+    if (value is List) {
+      return value.map(_deepCastValue).toList(growable: false);
+    }
+    return value;
   }
 }

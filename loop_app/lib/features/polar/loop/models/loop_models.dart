@@ -1,3 +1,22 @@
+enum LoopCollectionMode {
+  normal('normal'),
+  sdk('sdk'),
+  unknown('unknown');
+
+  const LoopCollectionMode(this.wireName);
+
+  final String wireName;
+
+  bool get isSdk => this == LoopCollectionMode.sdk;
+
+  static LoopCollectionMode fromWireName(String? value) {
+    return values.firstWhere(
+      (mode) => mode.wireName == value,
+      orElse: () => LoopCollectionMode.unknown,
+    );
+  }
+}
+
 enum LoopOfflineDataType {
   hr('HR'),
   ecg('ECG'),
@@ -42,6 +61,31 @@ enum LoopSensorSettingType {
       (type) => type.wireName == value,
       orElse: () =>
           throw ArgumentError.value(value, 'value', 'Unsupported setting type'),
+    );
+  }
+}
+
+class LoopSdkModeStatus {
+  final bool enabled;
+  final LoopCollectionMode collectionMode;
+  final DateTime checkedAt;
+
+  const LoopSdkModeStatus({
+    required this.enabled,
+    required this.collectionMode,
+    required this.checkedAt,
+  });
+
+  factory LoopSdkModeStatus.fromMap(Map<dynamic, dynamic> map) {
+    final enabled = map['enabled'] as bool? ?? false;
+    return LoopSdkModeStatus(
+      enabled: enabled,
+      collectionMode: LoopCollectionMode.fromWireName(
+        map['collection_mode'] as String? ?? (enabled ? 'sdk' : 'normal'),
+      ),
+      checkedAt:
+          DateTime.tryParse(map['checked_at'] as String? ?? '') ??
+          DateTime.now(),
     );
   }
 }
@@ -241,6 +285,186 @@ class LoopDownloadProgress {
       bytesDownloaded: (map['bytes_downloaded'] as num?)?.toInt() ?? 0,
       totalBytes: (map['total_bytes'] as num?)?.toInt() ?? 0,
       progressPercent: (map['progress_percent'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class LoopWellnessBatch {
+  final String domain;
+  final int itemCount;
+  final Object? items;
+
+  const LoopWellnessBatch({
+    required this.domain,
+    required this.itemCount,
+    required this.items,
+  });
+
+  factory LoopWellnessBatch.fromMap(Map<dynamic, dynamic> map) {
+    return LoopWellnessBatch(
+      domain: map['domain'] as String? ?? 'unknown',
+      itemCount: (map['item_count'] as num?)?.toInt() ?? 0,
+      items: _deepCastValue(map['items']),
+    );
+  }
+}
+
+class LoopSyncError {
+  final String scope;
+  final String? code;
+  final String message;
+
+  const LoopSyncError({required this.scope, required this.message, this.code});
+
+  factory LoopSyncError.fromMap(Map<dynamic, dynamic> map) {
+    return LoopSyncError(
+      scope: map['scope'] as String? ?? 'unknown',
+      code: map['code'] as String?,
+      message: map['message'] as String? ?? 'Loop sync error',
+    );
+  }
+}
+
+class LoopBackendSyncPayload {
+  final int schemaVersion;
+  final DateTime generatedAt;
+  final LoopCollectionMode collectionMode;
+  final LoopSdkModeStatus sdkModeStatus;
+  final DateTime? fromDate;
+  final DateTime? toDate;
+  final Map<String, Object?> device;
+  final List<Map<String, Object?>> offlineRecords;
+  final List<LoopWellnessBatch> wellnessBatches;
+  final List<String> warnings;
+  final List<LoopSyncError> errors;
+  final Map<String, Object?> rawPayload;
+
+  const LoopBackendSyncPayload({
+    required this.schemaVersion,
+    required this.generatedAt,
+    required this.collectionMode,
+    required this.sdkModeStatus,
+    required this.fromDate,
+    required this.toDate,
+    required this.device,
+    required this.offlineRecords,
+    required this.wellnessBatches,
+    required this.warnings,
+    required this.errors,
+    required this.rawPayload,
+  });
+
+  factory LoopBackendSyncPayload.fromMap(Map<dynamic, dynamic> map) {
+    final raw = _deepCastMap(map);
+    final syncWindow = Map<dynamic, dynamic>.from(
+      map['sync_window'] as Map<dynamic, dynamic>? ?? const {},
+    );
+    return LoopBackendSyncPayload(
+      schemaVersion: (map['schema_version'] as num?)?.toInt() ?? 1,
+      generatedAt:
+          DateTime.tryParse(map['generated_at'] as String? ?? '') ??
+          DateTime.now(),
+      collectionMode: LoopCollectionMode.fromWireName(
+        map['collection_mode'] as String?,
+      ),
+      sdkModeStatus: LoopSdkModeStatus.fromMap(
+        Map<dynamic, dynamic>.from(
+          map['sdk_mode_status'] as Map<dynamic, dynamic>? ?? const {},
+        ),
+      ),
+      fromDate: DateTime.tryParse(syncWindow['from_date'] as String? ?? ''),
+      toDate: DateTime.tryParse(syncWindow['to_date'] as String? ?? ''),
+      device: _deepCastMap(map['device'] as Map<dynamic, dynamic>? ?? const {}),
+      offlineRecords: (map['offline_records'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => _deepCastMap(
+              Map<dynamic, dynamic>.from(item as Map<dynamic, dynamic>),
+            ),
+          )
+          .toList(growable: false),
+      wellnessBatches: (map['wellness_batches'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => LoopWellnessBatch.fromMap(
+              Map<dynamic, dynamic>.from(item as Map<dynamic, dynamic>),
+            ),
+          )
+          .toList(growable: false),
+      warnings: List<String>.from(
+        map['warnings'] as List<dynamic>? ?? const [],
+      ),
+      errors: (map['errors'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => LoopSyncError.fromMap(
+              Map<dynamic, dynamic>.from(item as Map<dynamic, dynamic>),
+            ),
+          )
+          .toList(growable: false),
+      rawPayload: raw,
+    );
+  }
+
+  int get offlineRecordCount => offlineRecords.length;
+
+  int get wellnessItemCount =>
+      wellnessBatches.fold(0, (sum, batch) => sum + batch.itemCount);
+}
+
+class LoopSnapshotExport {
+  final DateTime exportedAt;
+  final LoopCollectionMode collectionMode;
+  final String zipFilePath;
+  final String manifestFilePath;
+  final String shareZipFilePath;
+  final int offlineRecordCount;
+  final int wellnessBatchCount;
+  final int wellnessItemCount;
+  final List<String> warnings;
+  final List<LoopSyncError> errors;
+  final LoopBackendSyncPayload payload;
+
+  const LoopSnapshotExport({
+    required this.exportedAt,
+    required this.collectionMode,
+    required this.zipFilePath,
+    required this.manifestFilePath,
+    required this.shareZipFilePath,
+    required this.offlineRecordCount,
+    required this.wellnessBatchCount,
+    required this.wellnessItemCount,
+    required this.warnings,
+    required this.errors,
+    required this.payload,
+  });
+
+  factory LoopSnapshotExport.fromMap(Map<dynamic, dynamic> map) {
+    return LoopSnapshotExport(
+      exportedAt:
+          DateTime.tryParse(map['exported_at'] as String? ?? '') ??
+          DateTime.now(),
+      collectionMode: LoopCollectionMode.fromWireName(
+        map['collection_mode'] as String?,
+      ),
+      zipFilePath: map['zip_file_path'] as String? ?? '',
+      manifestFilePath: map['manifest_file_path'] as String? ?? '',
+      shareZipFilePath: map['share_zip_file_path'] as String? ?? '',
+      offlineRecordCount: (map['offline_record_count'] as num?)?.toInt() ?? 0,
+      wellnessBatchCount: (map['wellness_batch_count'] as num?)?.toInt() ?? 0,
+      wellnessItemCount: (map['wellness_item_count'] as num?)?.toInt() ?? 0,
+      warnings: List<String>.from(
+        map['warnings'] as List<dynamic>? ?? const [],
+      ),
+      errors: (map['errors'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => LoopSyncError.fromMap(
+              Map<dynamic, dynamic>.from(item as Map<dynamic, dynamic>),
+            ),
+          )
+          .toList(growable: false),
+      payload: LoopBackendSyncPayload.fromMap(
+        Map<dynamic, dynamic>.from(
+          map['payload'] as Map<dynamic, dynamic>? ?? const {},
+        ),
+      ),
     );
   }
 }

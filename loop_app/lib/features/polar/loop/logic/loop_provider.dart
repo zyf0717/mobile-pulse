@@ -10,6 +10,11 @@ class LoopState {
   final PolarConnectionState connectionState;
   final String? lastError;
   final LoopDeviceTime? deviceTime;
+  final LoopSdkModeStatus? sdkModeStatus;
+  final Map<String, Object?>? diskSpace;
+  final Map<String, Object?>? userDeviceSettings;
+  final LoopBackendSyncPayload? lastSyncPayload;
+  final LoopSnapshotExport? lastSnapshotExport;
   final Set<LoopOfflineDataType> availableOfflineDataTypes;
   final Set<LoopOfflineDataType> activeOfflineRecordingTypes;
   final Map<LoopOfflineDataType, LoopSensorSettings> normalSettingsByType;
@@ -24,6 +29,11 @@ class LoopState {
     this.connectionState = PolarConnectionState.disconnected,
     this.lastError,
     this.deviceTime,
+    this.sdkModeStatus,
+    this.diskSpace,
+    this.userDeviceSettings,
+    this.lastSyncPayload,
+    this.lastSnapshotExport,
     this.availableOfflineDataTypes = const {},
     this.activeOfflineRecordingTypes = const {},
     this.normalSettingsByType = const {},
@@ -34,12 +44,27 @@ class LoopState {
     this.exportsByPath = const {},
   });
 
+  LoopCollectionMode get collectionMode =>
+      sdkModeStatus?.collectionMode ?? LoopCollectionMode.unknown;
+
+  bool get isSdkMode => sdkModeStatus?.enabled ?? false;
+
   LoopState copyWith({
     bool? isConfigured,
     PolarConnectionState? connectionState,
     String? lastError,
     bool? clearLastError,
     LoopDeviceTime? deviceTime,
+    LoopSdkModeStatus? sdkModeStatus,
+    bool? clearSdkModeStatus,
+    Map<String, Object?>? diskSpace,
+    bool? clearDiskSpace,
+    Map<String, Object?>? userDeviceSettings,
+    bool? clearUserDeviceSettings,
+    LoopBackendSyncPayload? lastSyncPayload,
+    bool? clearLastSyncPayload,
+    LoopSnapshotExport? lastSnapshotExport,
+    bool? clearLastSnapshotExport,
     Set<LoopOfflineDataType>? availableOfflineDataTypes,
     Set<LoopOfflineDataType>? activeOfflineRecordingTypes,
     Map<LoopOfflineDataType, LoopSensorSettings>? normalSettingsByType,
@@ -53,6 +78,19 @@ class LoopState {
     connectionState: connectionState ?? this.connectionState,
     lastError: clearLastError == true ? null : (lastError ?? this.lastError),
     deviceTime: deviceTime ?? this.deviceTime,
+    sdkModeStatus: clearSdkModeStatus == true
+        ? null
+        : (sdkModeStatus ?? this.sdkModeStatus),
+    diskSpace: clearDiskSpace == true ? null : (diskSpace ?? this.diskSpace),
+    userDeviceSettings: clearUserDeviceSettings == true
+        ? null
+        : (userDeviceSettings ?? this.userDeviceSettings),
+    lastSyncPayload: clearLastSyncPayload == true
+        ? null
+        : (lastSyncPayload ?? this.lastSyncPayload),
+    lastSnapshotExport: clearLastSnapshotExport == true
+        ? null
+        : (lastSnapshotExport ?? this.lastSnapshotExport),
     availableOfflineDataTypes:
         availableOfflineDataTypes ?? this.availableOfflineDataTypes,
     activeOfflineRecordingTypes:
@@ -76,6 +114,11 @@ class LoopNotifier extends Notifier<LoopState> {
       final isConnected = connectionState == PolarConnectionState.connected;
       state = state.copyWith(
         connectionState: connectionState,
+        clearSdkModeStatus: !isConnected,
+        clearDiskSpace: !isConnected,
+        clearUserDeviceSettings: !isConnected,
+        clearLastSyncPayload: !isConnected,
+        clearLastSnapshotExport: !isConnected,
         activeOfflineRecordingTypes: isConnected
             ? state.activeOfflineRecordingTypes
             : const {},
@@ -84,6 +127,7 @@ class LoopNotifier extends Notifier<LoopState> {
             : const {},
         recordings: isConnected ? state.recordings : const [],
         downloadsByPath: isConnected ? state.downloadsByPath : const {},
+        exportsByPath: isConnected ? state.exportsByPath : const {},
       );
     });
     final errorSub = loop.errorStream.listen((error) {
@@ -130,6 +174,115 @@ class LoopNotifier extends Notifier<LoopState> {
           .setDeviceTime(dateTime ?? DateTime.now());
       state = state.copyWith(deviceTime: value, clearLastError: true);
       return value;
+    });
+  }
+
+  Future<LoopSdkModeStatus?> refreshSdkModeStatus() async {
+    return _runWithValue(() async {
+      final status = await ref
+          .read(polarLoopServiceProvider)
+          .getSdkModeStatus();
+      state = state.copyWith(sdkModeStatus: status, clearLastError: true);
+      return status;
+    });
+  }
+
+  Future<LoopSdkModeStatus?> enableSdkMode() async {
+    return _runWithValue(() async {
+      final status = await ref
+          .read(polarLoopServiceProvider)
+          .setSdkModeEnabled(true);
+      state = state.copyWith(sdkModeStatus: status, clearLastError: true);
+      return status;
+    });
+  }
+
+  Future<LoopSdkModeStatus?> disableSdkMode() async {
+    return _runWithValue(() async {
+      final status = await ref
+          .read(polarLoopServiceProvider)
+          .setSdkModeEnabled(false);
+      state = state.copyWith(sdkModeStatus: status, clearLastError: true);
+      return status;
+    });
+  }
+
+  Future<Map<String, Object?>?> refreshDiskSpace() async {
+    return _runWithValue(() async {
+      final diskSpace = await ref.read(polarLoopServiceProvider).getDiskSpace();
+      state = state.copyWith(diskSpace: diskSpace, clearLastError: true);
+      return diskSpace;
+    });
+  }
+
+  Future<Map<String, Object?>?> refreshUserDeviceSettings() async {
+    return _runWithValue(() async {
+      final settings = await ref
+          .read(polarLoopServiceProvider)
+          .getUserDeviceSettings();
+      state = state.copyWith(
+        userDeviceSettings: settings,
+        clearLastError: true,
+      );
+      return settings;
+    });
+  }
+
+  Future<void> refreshDeviceContext() async {
+    await _run(() async {
+      await refreshSdkModeStatus();
+      await refreshDiskSpace();
+      await refreshUserDeviceSettings();
+      state = state.copyWith(clearLastError: true);
+    });
+  }
+
+  Future<LoopBackendSyncPayload?> buildSyncPayload({
+    DateTime? fromDate,
+    DateTime? toDate,
+    List<String>? recordingPaths,
+  }) async {
+    return _runWithValue(() async {
+      final payload = await ref
+          .read(polarLoopServiceProvider)
+          .buildSyncPayload(
+            fromDate:
+                fromDate ?? DateTime.now().subtract(const Duration(days: 2)),
+            toDate: toDate ?? DateTime.now(),
+            recordingPaths:
+                recordingPaths ??
+                state.recordings.map((entry) => entry.path).toList(),
+          );
+      state = state.copyWith(
+        lastSyncPayload: payload,
+        sdkModeStatus: payload.sdkModeStatus,
+        clearLastError: true,
+      );
+      return payload;
+    });
+  }
+
+  Future<LoopSnapshotExport?> exportNormalModeSnapshot({
+    DateTime? fromDate,
+    DateTime? toDate,
+    List<String>? recordingPaths,
+  }) async {
+    return _runWithValue(() async {
+      final snapshot = await ref
+          .read(polarLoopServiceProvider)
+          .exportNormalModeSnapshot(
+            fromDate:
+                fromDate ?? DateTime.now().subtract(const Duration(days: 365)),
+            toDate: toDate ?? DateTime.now(),
+            recordingPaths: recordingPaths,
+          );
+      state = state.copyWith(
+        lastSnapshotExport: snapshot,
+        lastSyncPayload: snapshot.payload,
+        sdkModeStatus: snapshot.payload.sdkModeStatus,
+        clearLastError: true,
+      );
+      return snapshot;
     });
   }
 

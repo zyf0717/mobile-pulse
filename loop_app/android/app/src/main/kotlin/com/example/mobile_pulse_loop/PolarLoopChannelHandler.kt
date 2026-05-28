@@ -6,6 +6,7 @@ import android.os.Looper
 import android.os.Environment
 import android.provider.MediaStore
 import com.polar.sdk.api.PolarBleApi
+import com.polar.sdk.impl.utils.CaloriesType
 import com.polar.sdk.api.model.PolarAccelerometerData
 import com.polar.sdk.api.model.PolarHrData
 import com.polar.sdk.api.model.PolarOfflineRecordingData
@@ -28,11 +29,17 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
+import java.util.IdentityHashMap
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class PolarLoopChannelHandler(
     sharedPolarBleApi: SharedPolarBleApi,
@@ -170,6 +177,60 @@ class PolarLoopChannelHandler(
                     ?: throw IllegalArgumentException("localTime is required")
                 api.setLocalTime(identifier, parseLocalDateTime(localTime))
                 timePayload(api.getLocalTimeWithZone(identifier))
+            }
+
+            "getSdkModeStatus" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
+                )
+                sdkModeStatusPayload(identifier)
+            }
+
+            "setSdkModeEnabled" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
+                )
+                val enabled = call.argument<Boolean>("enabled")
+                    ?: throw IllegalArgumentException("enabled is required")
+                requireNoActiveOfflineRecordings(identifier)
+                if (enabled) {
+                    api.enableSDKMode(identifier)
+                } else {
+                    api.disableSDKMode(identifier)
+                }
+                sdkModeStatusPayload(identifier)
+            }
+
+            "getDiskSpace" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
+                )
+                reflectivePayload(api.getDiskSpace(identifier))
+            }
+
+            "getUserDeviceSettings" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
+                )
+                reflectivePayload(api.getUserDeviceSettings(identifier))
+            }
+
+            "buildSyncPayload" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                buildSyncPayload(identifier, call)
+            }
+
+            "exportNormalModeSnapshot" -> launchMethod(result) {
+                val identifier = requireConnectedIdentifier()
+                exportNormalModeSnapshot(identifier, call)
             }
 
             "getAvailableOfflineDataTypes" -> launchMethod(result) {
@@ -515,6 +576,529 @@ class PolarLoopChannelHandler(
         )
     }
 
+    private suspend fun buildSyncPayload(
+        identifier: String,
+        call: MethodCall,
+    ): Map<String, Any?> {
+        val fromDate = requestedFromDate(call)
+        val toDate = requestedToDate(call)
+        val recordingPaths = requestedRecordingPaths(call)
+        val warnings = mutableListOf<String>()
+        val errors = mutableListOf<Map<String, Any?>>()
+        val sdkModeStatus = sdkModeStatusPayload(identifier)
+        val sdkModeEnabled = sdkModeStatus["enabled"] as Boolean? ?: false
+        val collectionMode = if (sdkModeEnabled) "sdk" else "normal"
+        val diskSpaceBefore = collectOptionalPayload(
+            scope = "disk_space_before",
+            errors = errors,
+        ) {
+            requireFeatureReady(
+                identifier,
+                PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
+            )
+            api.getDiskSpace(identifier)
+        }
+        val userDeviceSettings = collectOptionalPayload(
+            scope = "user_device_settings",
+            errors = errors,
+        ) {
+            requireFeatureReady(
+                identifier,
+                PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
+            )
+            api.getUserDeviceSettings(identifier)
+        }
+
+        val offlineRecords = mutableListOf<Map<String, Any?>>()
+        recordingPaths.forEach { path ->
+            try {
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
+                )
+                val entry = resolveEntry(identifier, path)
+                val cachedDownload = fetchOfflineRecord(identifier, entry, emitProgress = false)
+                offlineRecords += linkedMapOf(
+                    "path" to path,
+                    "mode_at_transfer" to collectionMode,
+                    "entry" to recordingEntryPayload(entry),
+                    "downloaded_at" to cachedDownload.downloadedAt.toString(),
+                    "settings" to cachedDownload.data.settings?.let(::selectedSensorSettingsPayload),
+                    "summary" to cachedDownload.summary,
+                    "data" to offlineRecordingDataPayload(cachedDownload.data),
+                )
+            } catch (error: Throwable) {
+                errors += errorPayload("offline_record:$path", error)
+            }
+        }
+
+        val wellnessBatches = mutableListOf<Map<String, Any?>>()
+        if (sdkModeEnabled) {
+            warnings += "Wellness sync skipped because the device is currently in SDK mode."
+        } else {
+            val syncStarted = try {
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
+                )
+                api.sendInitializationAndStartSyncNotifications(identifier)
+            } catch (error: Throwable) {
+                errors += errorPayload("sync_start", error)
+                false
+            }
+
+            if (syncStarted) {
+                try {
+                    collectWellnessBatch(
+                        name = "steps",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getSteps(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "distance",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getDistance(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "active_time",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getActiveTime(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "activity_sample_data",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getActivitySampleData(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "calories_activity",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getCalories(identifier, fromDate, toDate, CaloriesType.ACTIVITY)
+                    }
+                    collectWellnessBatch(
+                        name = "calories_training",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getCalories(identifier, fromDate, toDate, CaloriesType.TRAINING)
+                    }
+                    collectWellnessBatch(
+                        name = "calories_bmr",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getCalories(identifier, fromDate, toDate, CaloriesType.BMR)
+                    }
+                    collectWellnessBatch(
+                        name = "247_hr_samples",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.get247HrSamples(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "247_ppi_samples",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.get247PPiSamples(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "nightly_recharge",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+                        )
+                        api.getNightlyRecharge(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "sleep",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SLEEP_DATA,
+                        )
+                        api.getSleep(identifier, fromDate, toDate)
+                    }
+                    collectWellnessBatch(
+                        name = "skin_temperature",
+                        errors = errors,
+                        target = wellnessBatches,
+                    ) {
+                        requireFeatureReady(
+                            identifier,
+                            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_TEMPERATURE_DATA,
+                        )
+                        api.getSkinTemperature(identifier, fromDate, toDate)
+                    }
+                } finally {
+                    runCatching {
+                        api.sendTerminateAndStopSyncNotifications(identifier)
+                    }.onFailure { error ->
+                        errors += errorPayload("sync_stop", error)
+                    }
+                }
+            } else {
+                warnings += "Wellness sync did not start because the device declined sync initialization."
+            }
+        }
+
+        val diskSpaceAfter = collectOptionalPayload(
+            scope = "disk_space_after",
+            errors = errors,
+        ) {
+            requireFeatureReady(
+                identifier,
+                PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
+            )
+            api.getDiskSpace(identifier)
+        }
+
+        return linkedMapOf(
+            "schema_version" to 1,
+            "generated_at" to Instant.now().toString(),
+            "collection_mode" to collectionMode,
+            "sdk_mode_status" to sdkModeStatus,
+            "sync_window" to linkedMapOf(
+                "from_date" to fromDate.toString(),
+                "to_date" to toDate.toString(),
+            ),
+            "device" to linkedMapOf(
+                "device_id" to deviceId,
+                "identifier" to identifier,
+                "user_settings" to userDeviceSettings,
+                "disk_space_before" to diskSpaceBefore,
+                "disk_space_after" to diskSpaceAfter,
+            ),
+            "offline_records" to offlineRecords,
+            "wellness_batches" to wellnessBatches,
+            "warnings" to warnings,
+            "errors" to errors,
+        )
+    }
+
+    private suspend fun exportNormalModeSnapshot(
+        identifier: String,
+        call: MethodCall,
+    ): Map<String, Any?> {
+        val sdkModeStatus = sdkModeStatusPayload(identifier)
+        val sdkModeEnabled = sdkModeStatus["enabled"] as Boolean? ?: false
+        if (sdkModeEnabled) {
+            throw IllegalStateException(
+                "Normal-mode snapshot export is only available while SDK mode is disabled.",
+            )
+        }
+
+        val recordingPaths = requestedRecordingPaths(call)
+            .ifEmpty {
+                requireFeatureReady(
+                    identifier,
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
+                )
+                api.listOfflineRecordings(identifier).toList().map { it.path }
+            }
+        val payload = buildSyncPayload(
+            identifier = identifier,
+            call = MethodCall(
+                "buildSyncPayload",
+                mapOf(
+                    "fromDate" to requestedFromDate(call).toString(),
+                    "toDate" to requestedToDate(call).toString(),
+                    "recordingPaths" to recordingPaths,
+                ),
+            ),
+        )
+        val exportedAt = Instant.now()
+        val manifestPayload = linkedMapOf<String, Any?>().apply {
+            putAll(payload)
+            put("exported_at", exportedAt.toString())
+            put("device_data_deleted", false)
+            put("export_type", "normal_mode_snapshot")
+        }
+
+        val privateDirectory = privateSnapshotExportDirectory(exportedAt)
+        if (!privateDirectory.exists()) {
+            privateDirectory.mkdirs()
+        }
+        val wellnessDirectory = File(privateDirectory, "wellness").apply { mkdirs() }
+        val offlineDirectory = File(privateDirectory, "offline_records").apply { mkdirs() }
+
+        val manifestFile = File(privateDirectory, "manifest.json")
+        val deviceContextFile = File(privateDirectory, "device_context.json")
+        val manifestJson = JSONObject(manifestPayload).toString(2)
+        manifestFile.writeText(manifestJson)
+
+        val deviceContextPayload = linkedMapOf(
+            "device" to manifestPayload["device"],
+            "sdk_mode_status" to manifestPayload["sdk_mode_status"],
+            "collection_mode" to manifestPayload["collection_mode"],
+            "sync_window" to manifestPayload["sync_window"],
+        )
+        deviceContextFile.writeText(JSONObject(deviceContextPayload).toString(2))
+
+        @Suppress("UNCHECKED_CAST")
+        val wellnessBatches = manifestPayload["wellness_batches"] as? List<Map<String, Any?>>
+            ?: emptyList()
+        wellnessBatches.forEach { batch ->
+            val domain = batch["domain"]?.toString().orEmpty()
+            if (domain.isBlank()) return@forEach
+            val file = File(wellnessDirectory, "${sanitizeFileName(domain)}.json")
+            file.writeText(JSONObject(batch).toString(2))
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val offlineRecords = manifestPayload["offline_records"] as? List<Map<String, Any?>>
+            ?: emptyList()
+        offlineRecords.forEachIndexed { index, record ->
+            val entry = record["entry"] as? Map<*, *>
+            val baseName = entry?.get("path")?.toString()?.substringAfterLast('/')
+                ?.ifBlank { "offline_record_$index" }
+                ?: "offline_record_$index"
+            val file = File(
+                offlineDirectory,
+                "${index.toString().padStart(2, '0')}_${sanitizeFileName(baseName)}.json",
+            )
+            file.writeText(JSONObject(record).toString(2))
+        }
+
+        val zipFile = privateSnapshotZipFile(exportedAt)
+        zipDirectory(privateDirectory, zipFile)
+
+        val relativePath = publicSnapshotRelativePath(exportedAt)
+        val publicZipPath = writePublicExportFileBytes(
+            relativePath = relativePath,
+            fileName = zipFile.name,
+            mimeType = "application/zip",
+            content = zipFile.readBytes(),
+        )
+        val publicManifestPath = writePublicExportFileBytes(
+            relativePath = relativePath,
+            fileName = manifestFile.name,
+            mimeType = "application/json",
+            content = manifestJson.toByteArray(Charsets.UTF_8),
+        )
+
+        return linkedMapOf(
+            "exported_at" to exportedAt.toString(),
+            "collection_mode" to "normal",
+            "zip_file_path" to publicZipPath,
+            "manifest_file_path" to publicManifestPath,
+            "share_zip_file_path" to zipFile.absolutePath,
+            "offline_record_count" to offlineRecords.size,
+            "wellness_batch_count" to wellnessBatches.size,
+            "wellness_item_count" to wellnessBatches.sumOf {
+                (it["item_count"] as? Number)?.toInt() ?: 0
+            },
+            "warnings" to (manifestPayload["warnings"] ?: emptyList<String>()),
+            "errors" to (manifestPayload["errors"] ?: emptyList<Map<String, Any?>>()),
+            "payload" to manifestPayload,
+        )
+    }
+
+    private fun requestedFromDate(call: MethodCall): LocalDate {
+        return call.argument<String>("fromDate")?.let(LocalDate::parse)
+            ?: LocalDate.now().minusDays(1)
+    }
+
+    private fun requestedToDate(call: MethodCall): LocalDate {
+        return call.argument<String>("toDate")?.let(LocalDate::parse)
+            ?: LocalDate.now()
+    }
+
+    private fun requestedRecordingPaths(call: MethodCall): List<String> {
+        return call.argument<List<*>>("recordingPaths")
+            ?.mapNotNull { it as? String }
+            ?.distinct()
+            ?: emptyList()
+    }
+
+    private suspend fun sdkModeStatusPayload(identifier: String): Map<String, Any?> {
+        val enabled = api.isSDKModeEnabled(identifier)
+        return linkedMapOf(
+            "enabled" to enabled,
+            "collection_mode" to if (enabled) "sdk" else "normal",
+            "checked_at" to Instant.now().toString(),
+        )
+    }
+
+    private suspend fun requireNoActiveOfflineRecordings(identifier: String) {
+        requireFeatureReady(
+            identifier,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
+        )
+        val activeRecordings = api.getOfflineRecordingStatus(identifier)
+        if (activeRecordings.isNotEmpty()) {
+            throw IllegalStateException(
+                "Stop all active offline recordings before changing SDK mode.",
+            )
+        }
+    }
+
+    private suspend fun collectWellnessBatch(
+        name: String,
+        errors: MutableList<Map<String, Any?>>,
+        target: MutableList<Map<String, Any?>>,
+        fetch: suspend () -> Any?,
+    ) {
+        try {
+            val items = reflectivePayload(fetch())
+            val count = when (items) {
+                is Collection<*> -> items.size
+                null -> 0
+                else -> 1
+            }
+            target += linkedMapOf(
+                "domain" to name,
+                "item_count" to count,
+                "items" to items,
+            )
+        } catch (error: Throwable) {
+            errors += errorPayload(name, error)
+        }
+    }
+
+    private suspend fun collectOptionalPayload(
+        scope: String,
+        errors: MutableList<Map<String, Any?>>,
+        fetch: suspend () -> Any?,
+    ): Any? {
+        return try {
+            reflectivePayload(fetch())
+        } catch (error: Throwable) {
+            errors += errorPayload(scope, error)
+            null
+        }
+    }
+
+    private fun errorPayload(scope: String, error: Throwable): Map<String, Any?> {
+        return linkedMapOf(
+            "scope" to scope,
+            "code" to error.javaClass.simpleName,
+            "message" to friendlyErrorMessage(error),
+        )
+    }
+
+    private fun reflectivePayload(value: Any?): Any? {
+        return reflectivePayload(value, IdentityHashMap())
+    }
+
+    private fun reflectivePayload(
+        value: Any?,
+        visited: IdentityHashMap<Any, Unit>,
+    ): Any? {
+        return when (value) {
+            null -> null
+            is String, is Number, is Boolean -> value
+            is Enum<*> -> value.name
+            is Instant, is LocalDate, is LocalDateTime, is OffsetDateTime, is ZonedDateTime -> value.toString()
+            is Map<*, *> -> value.entries.associate { entry ->
+                entry.key.toString() to reflectivePayload(entry.value, visited)
+            }
+            is Iterable<*> -> value.map { item -> reflectivePayload(item, visited) }
+            is Array<*> -> value.map { item -> reflectivePayload(item, visited) }
+            is IntArray -> value.toList()
+            is LongArray -> value.toList()
+            is FloatArray -> value.map { it.toDouble() }
+            is DoubleArray -> value.toList()
+            is BooleanArray -> value.toList()
+            is ByteArray -> value.map { it.toInt() }
+            else -> {
+                if (visited.containsKey(value)) {
+                    return value.toString()
+                }
+                visited[value] = Unit
+                val getters = value.javaClass.methods
+                    .asSequence()
+                    .filter { method ->
+                        method.parameterCount == 0 &&
+                            method.name != "getClass" &&
+                            method.name != "getCompanion" &&
+                            method.returnType != Void.TYPE &&
+                            (method.name.startsWith("get") || method.name.startsWith("is"))
+                    }
+                    .sortedBy { it.name }
+                    .toList()
+                if (getters.isEmpty()) {
+                    value.toString()
+                } else {
+                    getters.associate { method ->
+                        getterNameToKey(method.name) to reflectivePayload(
+                            runCatching { method.invoke(value) }.getOrNull(),
+                            visited,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun getterNameToKey(name: String): String {
+        val trimmed = when {
+            name.startsWith("get") -> name.removePrefix("get")
+            name.startsWith("is") -> name.removePrefix("is")
+            else -> name
+        }
+        if (trimmed.isEmpty()) return name
+        return buildString {
+            trimmed.forEachIndexed { index, char ->
+                if (char.isUpperCase() && index > 0) {
+                    append('_')
+                }
+                append(char.lowercaseChar())
+            }
+        }
+    }
+
     private fun buildSummary(data: PolarOfflineRecordingData): Map<String, Any?> {
         return when (data) {
             is PolarOfflineRecordingData.AccOfflineRecording -> {
@@ -727,6 +1311,16 @@ class PolarLoopChannelHandler(
         return File(privateExportDirectoryForEntry(entry), "summary.json")
     }
 
+    private fun privateSnapshotExportDirectory(exportedAt: Instant): File {
+        val root = File(appContext.filesDir, "polar_loop/exports/${sanitizeFileName(deviceId)}")
+        return File(root, snapshotExportFolderName(exportedAt))
+    }
+
+    private fun privateSnapshotZipFile(exportedAt: Instant): File {
+        val root = File(appContext.filesDir, "polar_loop/exports/${sanitizeFileName(deviceId)}")
+        return File(root, "${snapshotExportFolderName(exportedAt)}.zip")
+    }
+
     private fun isExportConfirmed(entry: PolarOfflineRecordingEntry): Boolean {
         return privateRawExportFile(entry).isFile && privateSummaryExportFile(entry).isFile
     }
@@ -741,6 +1335,10 @@ class PolarLoopChannelHandler(
         return "${Environment.DIRECTORY_DOWNLOADS}/Polar Loop/${sanitizeFileName(deviceId)}/${exportFolderName(entry)}/"
     }
 
+    private fun publicSnapshotRelativePath(exportedAt: Instant): String {
+        return "${Environment.DIRECTORY_DOWNLOADS}/Polar Loop/${sanitizeFileName(deviceId)}/${snapshotExportFolderName(exportedAt)}/"
+    }
+
     private fun publicExportFilePath(entry: PolarOfflineRecordingEntry, fileName: String): String {
         val downloadsRoot = Environment.getExternalStoragePublicDirectory(
             Environment.DIRECTORY_DOWNLOADS,
@@ -748,6 +1346,16 @@ class PolarLoopChannelHandler(
         return File(
             downloadsRoot,
             "Polar Loop/${sanitizeFileName(deviceId)}/${exportFolderName(entry)}/$fileName",
+        ).absolutePath
+    }
+
+    private fun publicFilePath(relativePath: String, fileName: String): String {
+        val downloadsRoot = Environment.getExternalStoragePublicDirectory(
+            Environment.DIRECTORY_DOWNLOADS,
+        )
+        return File(
+            downloadsRoot,
+            relativePath.removePrefix("${Environment.DIRECTORY_DOWNLOADS}/") + fileName,
         ).absolutePath
     }
 
@@ -784,6 +1392,37 @@ class PolarLoopChannelHandler(
         return publicExportFilePath(entry, fileName)
     }
 
+    private fun writePublicExportFileBytes(
+        relativePath: String,
+        fileName: String,
+        mimeType: String,
+        content: ByteArray,
+    ): String {
+        val resolver = appContext.contentResolver
+        deletePublicExportFile(relativePath, fileName)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Unable to create public export for $fileName")
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                output.write(content)
+            } ?: throw IllegalStateException("Unable to open public export stream for $fileName")
+            val publishedValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(uri, publishedValues, null, null)
+        } catch (error: Throwable) {
+            resolver.delete(uri, null, null)
+            throw error
+        }
+        return publicFilePath(relativePath, fileName)
+    }
+
     private fun deletePublicExportFile(relativePath: String, fileName: String) {
         val resolver = appContext.contentResolver
         val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
@@ -797,8 +1436,28 @@ class PolarLoopChannelHandler(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    private fun snapshotExportFolderName(exportedAt: Instant): String {
+        val safeTimestamp = sanitizeFileName(exportedAt.toString().replace(':', '-'))
+        return "normal_mode_sync_$safeTimestamp"
+    }
+
     private fun sanitizeFileName(value: String): String {
         return value.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    }
+
+    private fun zipDirectory(sourceDirectory: File, zipFile: File) {
+        ZipOutputStream(FileOutputStream(zipFile)).use { output ->
+            sourceDirectory.walkTopDown()
+                .filter { it.isFile }
+                .forEach { file ->
+                    val relativePath = file.relativeTo(sourceDirectory).invariantSeparatorsPath
+                    output.putNextEntry(ZipEntry(relativePath))
+                    FileInputStream(file).use { input ->
+                        input.copyTo(output)
+                    }
+                    output.closeEntry()
+                }
+        }
     }
 
     private fun parseLocalDateTime(value: String): LocalDateTime {
@@ -832,6 +1491,8 @@ class PolarLoopChannelHandler(
         return when {
             message.contains("NO_SUCH_FILE_OR_DIRECTORY") ->
                 "Selected offline recording no longer exists on the device. Refresh recordings and try again."
+            message.contains("ERROR_INVALID_STATE", ignoreCase = true) ->
+                "The requested operation is not valid in the device's current state. Stop active recordings and try again."
             error.javaClass.simpleName == "PolarOperationNotSupported" ->
                 "Polar Loop operation is not supported for the selected item or current device state. Refresh recordings and try again."
             else -> message

@@ -36,6 +36,10 @@ class SharedPolarBleApi(context: Context) {
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
         appContext,
         setOf(
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ACTIVITY_DATA,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SLEEP_DATA,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_TEMPERATURE_DATA,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_CONTROL,
             PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_DEVICE_TIME_SETUP,
             PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
             PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_FILE_TRANSFER,

@@ -41,6 +41,9 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
         state.connectionState == PolarConnectionState.connecting ||
         state.connectionState == PolarConnectionState.scanning;
     final isConnected = state.connectionState == PolarConnectionState.connected;
+    final sdkModeStatus = state.sdkModeStatus;
+    final lastSyncPayload = state.lastSyncPayload;
+    final lastSnapshotExport = state.lastSnapshotExport;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Loop Dev')),
@@ -108,6 +111,194 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
                       ),
                     ],
                   ),
+                ],
+              ),
+              _SectionCard(
+                title: 'Collection Mode',
+                children: [
+                  _InfoRow(
+                    label: 'Mode',
+                    value: sdkModeStatus == null
+                        ? 'Unknown'
+                        : sdkModeStatus.collectionMode.wireName,
+                  ),
+                  _InfoRow(
+                    label: 'Checked',
+                    value: sdkModeStatus == null
+                        ? 'Not loaded'
+                        : sdkModeStatus.checkedAt.toString(),
+                  ),
+                  _InfoRow(
+                    label: 'Disk space',
+                    value: _summarizeMap(state.diskSpace),
+                  ),
+                  _InfoRow(
+                    label: 'Device flags',
+                    value: _summarizeMap(state.userDeviceSettings),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton(
+                        key: const ValueKey(
+                          'loop-refresh-device-context-button',
+                        ),
+                        onPressed: isConnected
+                            ? notifier.refreshDeviceContext
+                            : null,
+                        child: const Text('Refresh Device Context'),
+                      ),
+                      OutlinedButton(
+                        key: const ValueKey('loop-enable-sdk-mode-button'),
+                        onPressed: isConnected ? notifier.enableSdkMode : null,
+                        child: const Text('Enable SDK Mode'),
+                      ),
+                      OutlinedButton(
+                        key: const ValueKey('loop-disable-sdk-mode-button'),
+                        onPressed: isConnected ? notifier.disableSdkMode : null,
+                        child: const Text('Use Normal Mode'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    state.isSdkMode
+                        ? 'SDK mode disables passive wellness metrics on-device. Use it when you need expanded recording settings.'
+                        : 'Normal mode preserves Polar Flow-compatible passive metrics and is the only mode used for wellness sync.',
+                  ),
+                ],
+              ),
+              _SectionCard(
+                title: 'Normal-Mode Snapshot',
+                children: [
+                  const Text(
+                    'Exports one zip snapshot per run. In normal mode the app fetches all retrievable wellness domains plus any current offline recordings, writes JSON files, and packages them into a shareable archive without deleting device data.',
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton(
+                        key: const ValueKey(
+                          'loop-export-normal-snapshot-button',
+                        ),
+                        onPressed: isConnected && !state.isSdkMode
+                            ? () => _exportNormalModeSnapshot(notifier)
+                            : null,
+                        child: const Text('Export Snapshot'),
+                      ),
+                      FilledButton.tonal(
+                        key: const ValueKey(
+                          'loop-export-share-normal-snapshot-button',
+                        ),
+                        onPressed: isConnected && !state.isSdkMode
+                            ? () => _exportAndShareNormalModeSnapshot(notifier)
+                            : null,
+                        child: const Text('Export & Share'),
+                      ),
+                      OutlinedButton(
+                        key: const ValueKey('loop-build-sync-payload-button'),
+                        onPressed: isConnected
+                            ? () => notifier.buildSyncPayload()
+                            : null,
+                        child: const Text('Preview Payload'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (lastSnapshotExport != null) ...[
+                    _InfoRow(
+                      label: 'Archive',
+                      value: lastSnapshotExport.zipFilePath,
+                    ),
+                    _InfoRow(
+                      label: 'Manifest',
+                      value: lastSnapshotExport.manifestFilePath,
+                    ),
+                    _InfoRow(
+                      label: 'Exported',
+                      value: lastSnapshotExport.exportedAt.toString(),
+                    ),
+                    _InfoRow(
+                      label: 'Snapshot',
+                      value:
+                          '${lastSnapshotExport.offlineRecordCount} offline, '
+                          '${lastSnapshotExport.wellnessBatchCount} wellness batch(es), '
+                          '${lastSnapshotExport.wellnessItemCount} item(s)',
+                    ),
+                    if (lastSnapshotExport.warnings.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _ChipList(
+                        label: 'Archive warnings',
+                        values: lastSnapshotExport.warnings,
+                      ),
+                    ],
+                    if (lastSnapshotExport.errors.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _ChipList(
+                        label: 'Archive errors',
+                        values: lastSnapshotExport.errors
+                            .map((error) => '${error.scope}: ${error.message}')
+                            .toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                  ],
+                  if (lastSyncPayload == null)
+                    const Text('No sync payload preview built yet.')
+                  else ...[
+                    _InfoRow(
+                      label: 'Generated',
+                      value: lastSyncPayload.generatedAt.toString(),
+                    ),
+                    _InfoRow(
+                      label: 'Mode',
+                      value: lastSyncPayload.collectionMode.wireName,
+                    ),
+                    _InfoRow(
+                      label: 'Window',
+                      value:
+                          '${lastSyncPayload.fromDate?.toString() ?? 'n/a'} -> '
+                          '${lastSyncPayload.toDate?.toString() ?? 'n/a'}',
+                    ),
+                    _InfoRow(
+                      label: 'Offline',
+                      value: '${lastSyncPayload.offlineRecordCount} record(s)',
+                    ),
+                    _InfoRow(
+                      label: 'Wellness',
+                      value:
+                          '${lastSyncPayload.wellnessBatches.length} batch(es), '
+                          '${lastSyncPayload.wellnessItemCount} item(s)',
+                    ),
+                    _ChipList(
+                      label: 'Wellness domains',
+                      values: lastSyncPayload.wellnessBatches
+                          .map(
+                            (batch) => '${batch.domain} (${batch.itemCount})',
+                          )
+                          .toList(),
+                    ),
+                    if (lastSyncPayload.warnings.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _ChipList(
+                        label: 'Warnings',
+                        values: lastSyncPayload.warnings,
+                      ),
+                    ],
+                    if (lastSyncPayload.errors.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _ChipList(
+                        label: 'Errors',
+                        values: lastSyncPayload.errors
+                            .map((error) => '${error.scope}: ${error.message}')
+                            .toList(),
+                      ),
+                    ],
+                  ],
                 ],
               ),
               _SectionCard(
@@ -193,7 +384,7 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
                                   fullSettings: true,
                                 )
                               : null,
-                          child: const Text('Fetch Full SDK Settings'),
+                          child: const Text('Fetch SDK-Mode Settings'),
                         ),
                       ],
                     ),
@@ -204,11 +395,14 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
                     ),
                     const SizedBox(height: 12),
                     _SettingsPanel(
-                      title: 'Full SDK Settings',
+                      title: 'SDK-Mode Settings',
                       settings: state.fullSettingsByType[selectedType],
                     ),
                     const SizedBox(height: 12),
                     _SettingSelectors(
+                      title: state.isSdkMode
+                          ? 'Selected SDK-Mode Recording Settings'
+                          : 'Selected Normal-Mode Recording Settings',
                       settings: effectiveSettings,
                       selected: selectedSettings,
                       onChanged: (settingType, value) {
@@ -399,8 +593,11 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
     LoopState state,
     LoopOfflineDataType dataType,
   ) {
-    return state.fullSettingsByType[dataType] ??
-        state.normalSettingsByType[dataType];
+    if (state.isSdkMode) {
+      return state.fullSettingsByType[dataType] ??
+          state.normalSettingsByType[dataType];
+    }
+    return state.normalSettingsByType[dataType];
   }
 
   Map<LoopSensorSettingType, int>? _defaultSelectionFor(
@@ -430,6 +627,18 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
     await _shareExportedRecord(record);
   }
 
+  Future<void> _exportNormalModeSnapshot(LoopNotifier notifier) async {
+    final snapshot = await notifier.exportNormalModeSnapshot();
+    if (!mounted || snapshot == null) return;
+    _showMessage('Exported normal-mode snapshot to Downloads/Polar Loop.');
+  }
+
+  Future<void> _exportAndShareNormalModeSnapshot(LoopNotifier notifier) async {
+    final snapshot = await notifier.exportNormalModeSnapshot();
+    if (!mounted || snapshot == null) return;
+    await _shareSnapshotExport(snapshot);
+  }
+
   Future<void> _shareExportedRecord(LoopExportedRecord record) async {
     final rawFile = File(record.shareRawFilePath);
     final summaryFile = File(record.shareSummaryFilePath);
@@ -457,6 +666,22 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
         title: 'Share Polar Loop export',
         text: 'Polar Loop export: ${record.entry.path}',
         files: files,
+      ),
+    );
+  }
+
+  Future<void> _shareSnapshotExport(LoopSnapshotExport snapshot) async {
+    final zipFile = File(snapshot.shareZipFilePath);
+    if (!mounted) return;
+    if (!await zipFile.exists()) {
+      _showMessage('No snapshot archive found. Re-export and try again.');
+      return;
+    }
+    await SharePlus.instance.share(
+      ShareParams(
+        title: 'Share Polar Loop normal-mode snapshot',
+        text: 'Polar Loop normal-mode snapshot: ${snapshot.exportedAt}',
+        files: [XFile(zipFile.path, name: zipFile.uri.pathSegments.last)],
       ),
     );
   }
@@ -595,6 +820,14 @@ class _LoopDevScreenState extends ConsumerState<LoopDevScreen> {
             ? current[entry.key]!
             : entry.value.last,
     };
+  }
+
+  String _summarizeMap(Map<String, Object?>? value) {
+    if (value == null || value.isEmpty) return 'Not loaded';
+    return value.entries
+        .take(4)
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(', ');
   }
 }
 
@@ -751,11 +984,13 @@ class _SettingsPanel extends StatelessWidget {
 }
 
 class _SettingSelectors extends StatelessWidget {
+  final String title;
   final LoopSensorSettings? settings;
   final Map<LoopSensorSettingType, int>? selected;
   final void Function(LoopSensorSettingType settingType, int value) onChanged;
 
   const _SettingSelectors({
+    required this.title,
     required this.settings,
     required this.selected,
     required this.onChanged,
@@ -776,7 +1011,7 @@ class _SettingSelectors extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Selected Settings',
+              title,
               style: Theme.of(
                 context,
               ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
